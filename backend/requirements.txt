@@ -5,4 +5,4 @@ SQLAlchemy
 psycopg2-binary
 azure-cognitiveservices-speech
 anthropic
-pyjwt
+pyjwt[crypto]

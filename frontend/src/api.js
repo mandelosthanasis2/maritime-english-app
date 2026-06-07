@@ -12,11 +12,24 @@ const API_BASE_URL = (
 ).replace(/\/$/, '')
 
 // Attach the current Supabase access token so the backend can verify the user.
+// getSession() returns the current session and refreshes the token if needed,
+// so this is a fresh, valid JWT (not a stale one).
 async function authHeaders() {
-  if (!supabase) return {}
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
-  return token ? { Authorization: `Bearer ${token}` } : {}
+  if (!supabase) {
+    console.warn('[auth] Supabase is not configured; request will be unauthenticated.')
+    return {}
+  }
+  const { data, error } = await supabase.auth.getSession()
+  if (error) {
+    console.warn('[auth] getSession() failed:', error.message)
+    return {}
+  }
+  const token = data?.session?.access_token
+  if (!token) {
+    console.warn('[auth] No access token on the current session — sending request without Authorization.')
+    return {}
+  }
+  return { Authorization: `Bearer ${token}` }
 }
 
 async function getJSON(path) {
