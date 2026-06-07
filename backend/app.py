@@ -1,6 +1,6 @@
 import logging
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from sqlalchemy import func
 
@@ -9,6 +9,7 @@ from models import Item, Lesson
 from pronunciation import PronunciationError, assess_pronunciation
 from roleplay import RoleplayError, chat as roleplay_chat
 from transcription import transcribe
+from tts import synthesize as synthesize_speech
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -158,6 +159,19 @@ def transcribe_route():
     except Exception:  # pragma: no cover - unexpected failure
         logger.exception("Transcription failed unexpectedly")
         return jsonify({"error": "Internal error during transcription."}), 500
+
+
+@app.route("/api/tts", methods=["POST"])
+def tts_route():
+    payload = request.get_json(silent=True) or {}
+    try:
+        audio = synthesize_speech(payload.get("text", ""))
+        return Response(audio, mimetype="audio/mpeg")
+    except PronunciationError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    except Exception:  # pragma: no cover - unexpected failure
+        logger.exception("Text-to-speech failed unexpectedly")
+        return jsonify({"error": "Internal error during synthesis."}), 500
 
 
 @app.route("/api/roleplay/chat", methods=["POST"])

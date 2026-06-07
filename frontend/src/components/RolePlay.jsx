@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { roleplayChat, transcribeAudio } from '../api.js'
+import useTts from '../useTts.js'
 
 export default function RolePlay({ itemId, scenario, scenarioEl, userRole }) {
+  const { play, playingKey, loadingKey } = useTts()
+  const lastAutoplayedRef = useRef(-1)
   const [started, setStarted] = useState(false)
   const [messages, setMessages] = useState([]) // { role, content, correction? }
   // idle | typing | transcribing | error
@@ -31,6 +34,21 @@ export default function RolePlay({ itemId, scenario, scenarioEl, userRole }) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages, status])
+
+  // Autoplay each new AI message aloud (browser may block autoplay — the 🔊
+  // button on the message is the fallback).
+  useEffect(() => {
+    if (messages.length === 0) {
+      lastAutoplayedRef.current = -1
+      return
+    }
+    const idx = messages.length - 1
+    const last = messages[idx]
+    if (last.role === 'assistant' && idx > lastAutoplayedRef.current) {
+      lastAutoplayedRef.current = idx
+      play(last.content, `msg-${idx}`)
+    }
+  }, [messages, play])
 
   async function start() {
     setStarted(true)
@@ -182,14 +200,29 @@ export default function RolePlay({ itemId, scenario, scenarioEl, userRole }) {
       </div>
 
       <div className="rp-chat" ref={scrollRef}>
-        {messages.map((m, i) => (
-          <div key={i} className={`rp-row rp-row--${m.role}`}>
-            <div className={`rp-bubble rp-bubble--${m.role}`}>{m.content}</div>
-            {m.correction && (
-              <div className="rp-correction">💡 διόρθωση: {m.correction}</div>
-            )}
-          </div>
-        ))}
+        {messages.map((m, i) => {
+          const key = `msg-${i}`
+          return (
+            <div key={i} className={`rp-row rp-row--${m.role}`}>
+              <div className="rp-bubbleline">
+                <div className={`rp-bubble rp-bubble--${m.role}`}>{m.content}</div>
+                {m.role === 'assistant' && (
+                  <button
+                    type="button"
+                    className={`rp-speak${playingKey === key ? ' rp-speak--playing' : ''}`}
+                    onClick={() => play(m.content, key)}
+                    aria-label="Άκου ξανά"
+                  >
+                    {loadingKey === key ? '⏳' : '🔊'}
+                  </button>
+                )}
+              </div>
+              {m.correction && (
+                <div className="rp-correction">💡 διόρθωση: {m.correction}</div>
+              )}
+            </div>
+          )
+        })}
 
         {status === 'typing' && (
           <div className="rp-row rp-row--assistant">
