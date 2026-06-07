@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchLessons } from '../api.js'
+import { fetchLessons, fetchMyProgress } from '../api.js'
 
 // Metadata for rendering a small track badge on each lesson card.
 const TRACK_META = {
@@ -44,13 +44,12 @@ function Hero() {
   )
 }
 
-function StatsRow({ lessonsTotal }) {
-  // NOTE: static placeholder values. Real streak / XP / completed counts will be
-  // wired to persisted progress data in a later step.
+function StatsRow({ streak, xp, completed, total, loading }) {
+  const dash = loading ? '…' : null
   const stats = [
-    { icon: '🔥', value: '0', label: 'ημέρες σερί' },
-    { icon: '⭐', value: '0', label: 'XP' },
-    { icon: '✅', value: `0/${lessonsTotal}`, label: 'μαθήματα' },
+    { icon: '🔥', value: dash ?? String(streak), label: 'ημέρες σερί' },
+    { icon: '⭐', value: dash ?? String(xp), label: 'XP' },
+    { icon: '✅', value: dash ?? `${completed}/${total}`, label: 'μαθήματα' },
   ]
   return (
     <div className="stats-row">
@@ -65,10 +64,13 @@ function StatsRow({ lessonsTotal }) {
   )
 }
 
-function LessonCard({ lesson }) {
+function LessonCard({ lesson, completed }) {
   const track = TRACK_META[lesson.track] || { icon: '📘', label: lesson.track || 'Lesson' }
   return (
-    <Link to={`/lessons/${lesson.lesson_id}`} className="lesson-card">
+    <Link
+      to={`/lessons/${lesson.lesson_id}`}
+      className={`lesson-card${completed ? ' lesson-card--done' : ''}`}
+    >
       <div className="lesson-card__top">
         {lesson.module && <span className="lesson-card__module">{lesson.module}</span>}
         <span className="lesson-card__track">
@@ -79,12 +81,15 @@ function LessonCard({ lesson }) {
       <h3 className="lesson-card__title">{lesson.title}</h3>
 
       <span className="lesson-card__count">
+        {completed && <span className="lesson-card__done-tick">✓ Ολοκληρώθηκε · </span>}
         {lesson.item_count} {lesson.item_count === 1 ? 'άσκηση' : 'ασκήσεις'}
       </span>
 
-      {/* Progress placeholder — 0% until per-lesson progress is persisted. */}
       <div className="lesson-card__progress" aria-hidden="true">
-        <div className="lesson-card__progress-fill" style={{ width: '0%' }} />
+        <div
+          className="lesson-card__progress-fill"
+          style={{ width: completed ? '100%' : '0%' }}
+        />
       </div>
     </Link>
   )
@@ -112,6 +117,9 @@ function Home() {
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
 
+  const [progress, setProgress] = useState(null)
+  const [progressLoading, setProgressLoading] = useState(true)
+
   useEffect(() => {
     let active = true
     setStatus('loading')
@@ -131,10 +139,37 @@ function Home() {
     }
   }, [])
 
+  useEffect(() => {
+    let active = true
+    setProgressLoading(true)
+    fetchMyProgress()
+      .then((data) => {
+        if (active) setProgress(data)
+      })
+      .catch(() => {
+        // Non-fatal: the home screen still works without progress.
+        if (active) setProgress(null)
+      })
+      .finally(() => {
+        if (active) setProgressLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const completedSet = new Set(progress?.completed_lesson_ids || [])
+
   return (
     <div className="home">
       <Hero />
-      <StatsRow lessonsTotal={status === 'ready' ? lessons.length : 0} />
+      <StatsRow
+        streak={progress?.current_streak ?? 0}
+        xp={progress?.total_xp ?? 0}
+        completed={progress?.lessons_completed ?? 0}
+        total={status === 'ready' ? lessons.length : 0}
+        loading={progressLoading}
+      />
 
       <section className="home-section">
         <h2 className="home-section__title">Τα μαθήματά σου</h2>
@@ -157,7 +192,11 @@ function Home() {
         {status === 'ready' && lessons.length > 0 && (
           <div className="lesson-list">
             {lessons.map((lesson) => (
-              <LessonCard key={lesson.lesson_id} lesson={lesson} />
+              <LessonCard
+                key={lesson.lesson_id}
+                lesson={lesson}
+                completed={completedSet.has(lesson.lesson_id)}
+              />
             ))}
           </div>
         )}

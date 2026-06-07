@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { fetchLesson } from '../api.js'
+import { completeLesson, fetchLesson } from '../api.js'
 import LessonItem, { isGatedType } from '../components/LessonItem.jsx'
 
 function Lesson() {
@@ -14,6 +14,10 @@ function Lesson() {
   const [phase, setPhase] = useState('intro') // intro | playing | done
   const [step, setStep] = useState(0)
   const [answered, setAnswered] = useState(false)
+
+  // Completion result from POST /api/lessons/:id/complete
+  const [completion, setCompletion] = useState(null)
+  const [completionStatus, setCompletionStatus] = useState('idle') // idle | saving | done | error
 
   useEffect(() => {
     let active = true
@@ -71,9 +75,23 @@ function Lesson() {
     setPhase('playing')
   }
 
+  function finishLesson() {
+    setPhase('done')
+    setCompletionStatus('saving')
+    completeLesson(lessonId)
+      .then((res) => {
+        setCompletion(res)
+        setCompletionStatus('done')
+      })
+      .catch(() => {
+        // Non-fatal: still show the celebration, just without the XP figure.
+        setCompletionStatus('error')
+      })
+  }
+
   function next() {
     if (step + 1 >= total) {
-      setPhase('done')
+      finishLesson()
       return
     }
     setStep(step + 1)
@@ -119,6 +137,31 @@ function Lesson() {
           <p className="player__done-sub">
             {total} {total === 1 ? 'άσκηση' : 'ασκήσεις'} ολοκληρώθηκαν
           </p>
+
+          {completionStatus === 'saving' && (
+            <p className="player__saving">
+              <span className="pa-spinner" aria-hidden="true" /> Καταγραφή προόδου…
+            </p>
+          )}
+
+          {completionStatus === 'done' && completion && (
+            <div className="reward">
+              <div className="reward__xp">+{completion.xp_earned} XP</div>
+              {completion.already_completed && (
+                <p className="reward__note">Το είχες ήδη ολοκληρώσει — XP επανάληψης</p>
+              )}
+              <div className="reward__streak">
+                🔥 {completion.current_streak}{' '}
+                {completion.current_streak === 1 ? 'ημέρα σερί' : 'ημέρες σερί'}
+              </div>
+              <div className="reward__total">Σύνολο: ⭐ {completion.total_xp} XP</div>
+            </div>
+          )}
+
+          {completionStatus === 'error' && (
+            <p className="player__saving">Η πρόοδος δεν αποθηκεύτηκε, αλλά μπράβο!</p>
+          )}
+
           <button type="button" className="player__start" onClick={goHome}>
             Τέλος
           </button>

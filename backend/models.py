@@ -6,7 +6,18 @@ JSON is kept verbatim in a JSONB ``data`` column so nothing is lost and the
 schema does not need to change as lesson content evolves.
 """
 
-from sqlalchemy import JSON, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -58,3 +69,29 @@ class Item(Base):
     data = Column(JSONType, nullable=False)
 
     lesson = relationship("Lesson", back_populates="items")
+
+
+class UserProgress(Base):
+    """Per-user XP and streak, keyed by the Supabase user id."""
+
+    __tablename__ = "user_progress"
+
+    user_id = Column(String, primary_key=True)  # Supabase auth user id (UUID)
+    email = Column(String)
+    total_xp = Column(Integer, nullable=False, default=0)
+    current_streak = Column(Integer, nullable=False, default=0)
+    last_active_date = Column(Date)
+
+
+class UserLessonCompletion(Base):
+    """One row per (user, lesson) — tracks completion and XP from that lesson."""
+
+    __tablename__ = "user_lesson_completions"
+    __table_args__ = (UniqueConstraint("user_id", "lesson_id", name="uq_user_lesson"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    lesson_id = Column(String, nullable=False, index=True)
+    completed_at = Column(DateTime(timezone=True), server_default=func.now())
+    times_completed = Column(Integer, nullable=False, default=1)
+    xp_earned = Column(Integer, nullable=False, default=0)  # cumulative from this lesson

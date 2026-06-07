@@ -4,10 +4,20 @@
 // be configured per-deployment (e.g. on Vercel). Falls back to the live Railway
 // service when not set.
 
+import { supabase } from './supabaseClient.js'
+
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
   'https://maritime-english-app-production.up.railway.app'
 ).replace(/\/$/, '')
+
+// Attach the current Supabase access token so the backend can verify the user.
+async function authHeaders() {
+  if (!supabase) return {}
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
 
 async function getJSON(path) {
   const res = await fetch(`${API_BASE_URL}${path}`)
@@ -34,6 +44,43 @@ export function fetchLesson(lessonId) {
 
 export function fetchLessonsByTrack(track) {
   return getJSON(`/api/tracks/${encodeURIComponent(track)}/lessons`)
+}
+
+// --- Authenticated (user progress) -----------------------------------------
+
+export async function fetchMyProgress() {
+  const headers = await authHeaders()
+  const res = await fetch(`${API_BASE_URL}/api/me/progress`, { headers })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // keep generic
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
+export async function completeLesson(lessonId) {
+  const headers = await authHeaders()
+  const res = await fetch(
+    `${API_BASE_URL}/api/lessons/${encodeURIComponent(lessonId)}/complete`,
+    { method: 'POST', headers },
+  )
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // keep generic
+    }
+    throw new Error(message)
+  }
+  return res.json()
 }
 
 export async function roleplayChat({ itemId, scenario, userRole, history, userMessage }) {

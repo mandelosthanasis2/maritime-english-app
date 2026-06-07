@@ -1857,3 +1857,68 @@ h3 {
 .account-logout:active {
   transform: scale(0.98);
 }
+
+/* ============================================================
+   Progress & XP
+   ============================================================ */
+/* Completed lesson card */
+.lesson-card--done {
+  border-color: #bfe3d4;
+  background: linear-gradient(180deg, #f3fbf7 0%, var(--surface) 60%);
+}
+
+.lesson-card__done-tick {
+  color: var(--correct);
+  font-weight: 700;
+}
+
+/* Completion reward block */
+.player__saving {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  margin: 0.4rem 0 1.2rem;
+}
+
+.reward {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.4rem 0 1.4rem;
+  animation: score-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.reward__xp {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 2.2rem;
+  color: transparent;
+  background: var(--grad-accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  line-height: 1.1;
+}
+
+.reward__note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--amber);
+}
+
+.reward__streak {
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: var(--navy);
+  background: #fff2e8;
+  border-radius: var(--r-pill);
+  padding: 0.35rem 1rem;
+}
+
+.reward__total {
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
