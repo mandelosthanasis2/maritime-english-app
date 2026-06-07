@@ -913,3 +913,211 @@ body {
   background: #ffe7a8;
   animation: tts-pulse 1s ease-in-out infinite;
 }
+
+/* ---- Lesson player (Duolingo-style step flow) ---- */
+.player {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 3.4rem); /* below the sticky app header */
+}
+
+/* Top bar: close + progress */
+.player__topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.2rem 0 1.1rem;
+}
+
+.player__close {
+  flex-shrink: 0;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 1.1rem;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 0.1s ease;
+}
+
+.player__close:hover {
+  background: #e9eef0;
+}
+
+.player__bar {
+  flex: 1;
+  height: 0.7rem;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.player__bar-fill {
+  height: 100%;
+  background: var(--teal);
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}
+
+.player__step-label {
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-faint);
+  min-width: 2.8rem;
+  text-align: right;
+}
+
+/* The single focused step */
+.player__step {
+  flex: 1;
+  animation: step-in 0.28s ease;
+}
+
+@keyframes step-in {
+  from { opacity: 0; transform: translateX(26px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.li {
+  display: flex;
+  flex-direction: column;
+}
+
+.li-badges {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1.1rem;
+}
+
+.li-display .item-card__english {
+  font-size: 1.7rem;
+  line-height: 1.3;
+}
+
+.li .item-card__english {
+  font-size: 1.5rem;
+}
+
+.li-display {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+/* Footer: continue */
+.player__footer {
+  padding: 1.1rem 0 0.4rem;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+}
+
+.player__hint {
+  margin: 0 0 0.6rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--ink-faint);
+}
+
+.player__continue,
+.player__start {
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+  width: 100%;
+  background: var(--teal);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  padding: 0.95rem 1rem;
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+
+.player__continue:active:not(:disabled),
+.player__start:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.player__continue:disabled,
+.player__start:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Intro screen */
+.player__intro {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 0.5rem;
+  padding: 1rem 0 2rem;
+}
+
+.player__intro .lesson__title {
+  font-size: 1.7rem;
+}
+
+.player__intro .lesson__description {
+  max-width: 32rem;
+}
+
+.player__count {
+  margin: 0.6rem 0 1.4rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--teal);
+  background: var(--teal-soft);
+  border-radius: 999px;
+  padding: 0.3rem 0.9rem;
+}
+
+.player__intro .player__start {
+  max-width: 22rem;
+}
+
+/* Completion screen */
+.player__done {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 0.4rem;
+  padding: 2rem 0;
+  animation: step-in 0.3s ease;
+}
+
+.player__trophy {
+  font-size: 4rem;
+  animation: trophy-pop 0.5s ease;
+}
+
+@keyframes trophy-pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.player__done-title {
+  margin: 0.4rem 0 0;
+  font-size: 1.6rem;
+  color: var(--navy);
+}
+
+.player__done-sub {
+  margin: 0 0 1.6rem;
+  color: var(--ink-soft);
+}
+
+.player__done .player__start {
+  max-width: 22rem;
+}
