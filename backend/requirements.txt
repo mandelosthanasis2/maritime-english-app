@@ -4,4 +4,3 @@ gunicorn
 SQLAlchemy
 psycopg2-binary
 azure-cognitiveservices-speech
-pydub

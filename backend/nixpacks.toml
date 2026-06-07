@@ -1,7 +1,0 @@
-# Railway / Nixpacks configuration for the backend service.
-#
-# pydub shells out to ffmpeg to convert the browser's WebM/Opus recordings into
-# the 16 kHz mono PCM WAV that the Azure Speech SDK requires. The "..." entry
-# preserves the packages Nixpacks auto-detects and simply appends ffmpeg.
-[phases.setup]
-nixPkgs = ["...", "ffmpeg"]
