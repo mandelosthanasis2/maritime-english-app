@@ -1,13 +1,20 @@
 import logging
 
 from flask import Flask, jsonify
+from flask_cors import CORS
+from sqlalchemy import func
 
-from db import init_db
+from db import SessionLocal, init_db
+from models import Item, Lesson
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Allow the frontend (Vercel) to call the API from the browser. Open to all
+# origins for now; we'll lock this down later.
+CORS(app)
 
 # Create tables on startup if they don't exist. Guarded so a database hiccup
 # never takes down the health check.
@@ -18,9 +25,95 @@ except Exception as exc:  # pragma: no cover - startup best effort
     logger.warning("Could not initialize database on startup: %s", exc)
 
 
+# --- Serialization helpers ---------------------------------------------------
+
+
+def serialize_lesson_meta(lesson, item_count):
+    """Lesson metadata only (no items)."""
+    return {
+        "lesson_id": lesson.lesson_id,
+        "track": lesson.track,
+        "module": lesson.module,
+        "title": lesson.title,
+        "description": lesson.description,
+        "interface_language": lesson.interface_language,
+        "target_language": lesson.target_language,
+        "version": lesson.version,
+        "item_count": item_count,
+    }
+
+
+def serialize_item(item):
+    """A single item: identifying columns plus its full rich `data` object."""
+    return {
+        "item_id": item.item_id,
+        "type": item.type,
+        "level": item.level,
+        "data": item.data,
+    }
+
+
+def item_counts(session):
+    """Return a {lesson_id: count} map in a single query."""
+    rows = session.query(Item.lesson_id, func.count(Item.id)).group_by(Item.lesson_id).all()
+    return dict(rows)
+
+
+# --- Routes ------------------------------------------------------------------
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/lessons", methods=["GET"])
+def list_lessons():
+    session = SessionLocal()
+    try:
+        counts = item_counts(session)
+        lessons = session.query(Lesson).order_by(Lesson.lesson_id).all()
+        return jsonify(
+            [serialize_lesson_meta(l, counts.get(l.lesson_id, 0)) for l in lessons]
+        )
+    finally:
+        session.close()
+
+
+@app.route("/api/lessons/<lesson_id>", methods=["GET"])
+def get_lesson(lesson_id):
+    session = SessionLocal()
+    try:
+        lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
+        if lesson is None:
+            return (
+                jsonify({"error": f"Lesson '{lesson_id}' not found."}),
+                404,
+            )
+        payload = serialize_lesson_meta(lesson, len(lesson.items))
+        # lesson.items is ordered by order_index via the relationship.
+        payload["items"] = [serialize_item(item) for item in lesson.items]
+        return jsonify(payload)
+    finally:
+        session.close()
+
+
+@app.route("/api/tracks/<track>/lessons", methods=["GET"])
+def list_lessons_by_track(track):
+    session = SessionLocal()
+    try:
+        counts = item_counts(session)
+        lessons = (
+            session.query(Lesson)
+            .filter_by(track=track)
+            .order_by(Lesson.lesson_id)
+            .all()
+        )
+        return jsonify(
+            [serialize_lesson_meta(l, counts.get(l.lesson_id, 0)) for l in lessons]
+        )
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":
