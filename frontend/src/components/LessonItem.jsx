@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import PronunciationPractice from './PronunciationPractice.jsx'
 import RolePlay from './RolePlay.jsx'
 import useTts from '../useTts.js'
@@ -16,6 +16,33 @@ function normalize(value) {
 // Item types that must be answered before the player lets the user continue.
 export function isGatedType(type) {
   return type === 'fill_gap' || type === 'word_order'
+}
+
+// Resolve the scrambled chips into the order that reconstructs the target
+// sentence. Returns the chip indices in correct order, or [] if it can't be
+// reconstructed (so hints/show-answer degrade gracefully).
+function computeCorrectOrder(scrambled, targetText) {
+  const targetTokens = normalize(targetText).split(' ').filter(Boolean)
+  const used = new Array(scrambled.length).fill(false)
+  const order = []
+  let ti = 0
+  while (ti < targetTokens.length) {
+    let found = -1
+    for (let i = 0; i < scrambled.length; i += 1) {
+      if (used[i]) continue
+      const chipTokens = normalize(scrambled[i]).split(' ').filter(Boolean)
+      if (chipTokens.length === 0) continue
+      if (chipTokens.every((t, k) => targetTokens[ti + k] === t)) {
+        found = i
+        ti += chipTokens.length
+        break
+      }
+    }
+    if (found === -1) return []
+    used[found] = true
+    order.push(found)
+  }
+  return order
 }
 
 function Reveal({ el }) {
@@ -56,9 +83,16 @@ function FillGap({ english, el, onAnswered }) {
   const options = Array.isArray(english.options) ? english.options : []
   const [selected, setSelected] = useState(null)
   const [correct, setCorrect] = useState(false)
+  const [revealed, setRevealed] = useState(false)
+  const [eliminated, setEliminated] = useState([]) // wrong options hinted away
+
+  const done = correct || revealed
+  const correctOption = options.find((o) => normalize(o) === normalize(english.answer))
+  const hintsExhausted =
+    options.filter((o) => o !== correctOption && !eliminated.includes(o)).length === 0
 
   function choose(option) {
-    if (correct) return
+    if (done) return
     setSelected(option)
     if (normalize(option) === normalize(english.answer)) {
       setCorrect(true)
@@ -66,22 +100,36 @@ function FillGap({ english, el, onAnswered }) {
     }
   }
 
+  function hint() {
+    if (done) return
+    const wrong = options.find((o) => o !== correctOption && !eliminated.includes(o))
+    if (wrong) setEliminated((prev) => [...prev, wrong])
+  }
+
+  function showAnswer() {
+    if (done) return
+    setRevealed(true)
+    onAnswered?.()
+  }
+
   return (
     <div className="interactive">
-      <p className="item-card__english">{correct ? english.text : english.gap_text}</p>
+      <p className="item-card__english">{done ? english.text : english.gap_text}</p>
 
       <div className="options">
         {options.map((option) => {
-          const isSelected = selected === option
           let cls = 'option'
-          if (isSelected) cls += correct ? ' option--correct' : ' option--wrong'
+          if (correct && selected === option) cls += ' option--correct'
+          else if (revealed && option === correctOption) cls += ' option--revealed'
+          else if (!done && selected === option) cls += ' option--wrong'
+          else if (!done && eliminated.includes(option)) cls += ' option--eliminated'
           return (
             <button
               key={option}
               type="button"
               className={cls}
               onClick={() => choose(option)}
-              disabled={correct}
+              disabled={done || eliminated.includes(option)}
             >
               {option}
             </button>
@@ -89,13 +137,22 @@ function FillGap({ english, el, onAnswered }) {
         })}
       </div>
 
-      {correct ? (
-        <p className="feedback feedback--correct">✓ Σωστά</p>
-      ) : (
-        selected && <p className="feedback feedback--wrong">Δοκίμασε ξανά</p>
+      {!done && (
+        <div className="help-actions">
+          <button type="button" className="help-btn" onClick={hint} disabled={hintsExhausted}>
+            💡 Βοήθεια
+          </button>
+          <button type="button" className="help-btn help-btn--reveal" onClick={showAnswer}>
+            Δες την απάντηση
+          </button>
+        </div>
       )}
 
-      {correct && <Reveal el={el} />}
+      {correct && <p className="feedback feedback--correct">✓ Σωστά</p>}
+      {revealed && <p className="feedback feedback--revealed">Η σωστή απάντηση 👆</p>}
+      {!done && selected && <p className="feedback feedback--wrong">Δοκίμασε ξανά</p>}
+
+      {done && <Reveal el={el} />}
     </div>
   )
 }
@@ -106,18 +163,28 @@ function WordOrder({ english, el, onAnswered }) {
   // (e.g. "The"/"the") remain individually addressable.
   const [placed, setPlaced] = useState([])
   const [result, setResult] = useState(null) // null | 'correct' | 'wrong'
+  const [revealed, setRevealed] = useState(false)
+  const [hints, setHints] = useState(0)
 
+  const correctOrder = useMemo(
+    () => computeCorrectOrder(scrambled, english.text),
+    [scrambled, english.text],
+  )
   const isCorrect = result === 'correct'
+  const done = isCorrect || revealed
   const placedSet = new Set(placed)
+  // Nudge with the first word or two, never the whole sentence.
+  const maxHints = Math.min(2, Math.max(0, correctOrder.length - 1))
+  const hintedSet = new Set(correctOrder.slice(0, hints))
 
   function addWord(index) {
-    if (isCorrect) return
+    if (done) return
     setResult(null)
     setPlaced((prev) => [...prev, index])
   }
 
   function removeWord(index) {
-    if (isCorrect) return
+    if (done) return
     setResult(null)
     setPlaced((prev) => prev.filter((i) => i !== index))
   }
@@ -137,9 +204,24 @@ function WordOrder({ english, el, onAnswered }) {
     setResult(null)
   }
 
+  function hint() {
+    if (done) return
+    setHints((h) => Math.min(maxHints, h + 1))
+  }
+
+  function showAnswer() {
+    if (done) return
+    setPlaced(correctOrder)
+    setRevealed(true)
+    onAnswered?.()
+  }
+
+  const rowState = revealed ? 'revealed' : result
+  const canHint = !done && maxHints > 0 && hints < maxHints
+
   return (
     <div className="interactive">
-      <div className={`answer-row${result ? ` answer-row--${result}` : ''}`}>
+      <div className={`answer-row${rowState ? ` answer-row--${rowState}` : ''}`}>
         {placed.length === 0 ? (
           <span className="answer-row__placeholder">Πάτησε τις λέξεις με τη σειρά…</span>
         ) : (
@@ -149,7 +231,7 @@ function WordOrder({ english, el, onAnswered }) {
               type="button"
               className="chip chip--placed"
               onClick={() => removeWord(index)}
-              disabled={isCorrect}
+              disabled={done}
             >
               {scrambled[index]}
             </button>
@@ -157,14 +239,14 @@ function WordOrder({ english, el, onAnswered }) {
         )}
       </div>
 
-      {!isCorrect && (
+      {!done && (
         <div className="word-bank">
           {scrambled.map((word, index) =>
             placedSet.has(index) ? null : (
               <button
                 key={index}
                 type="button"
-                className="chip"
+                className={`chip${hintedSet.has(index) ? ' chip--hint' : ''}`}
                 onClick={() => addWord(index)}
               >
                 {word}
@@ -174,8 +256,8 @@ function WordOrder({ english, el, onAnswered }) {
         </div>
       )}
 
-      <div className="interactive__actions">
-        {!isCorrect && (
+      {!done && (
+        <div className="interactive__actions">
           <button
             type="button"
             className="btn btn--primary"
@@ -184,21 +266,32 @@ function WordOrder({ english, el, onAnswered }) {
           >
             Έλεγχος
           </button>
-        )}
-        {placed.length > 0 && !isCorrect && (
-          <button type="button" className="btn btn--ghost" onClick={reset}>
-            Καθάρισμα
-          </button>
-        )}
-      </div>
-
-      {isCorrect ? (
-        <p className="feedback feedback--correct">✓ Σωστά</p>
-      ) : (
-        result === 'wrong' && <p className="feedback feedback--wrong">Δοκίμασε ξανά</p>
+          {placed.length > 0 && (
+            <button type="button" className="btn btn--ghost" onClick={reset}>
+              Καθάρισμα
+            </button>
+          )}
+        </div>
       )}
 
-      {isCorrect && <Reveal el={el} />}
+      {!done && (
+        <div className="help-actions">
+          <button type="button" className="help-btn" onClick={hint} disabled={!canHint}>
+            💡 Βοήθεια
+          </button>
+          <button type="button" className="help-btn help-btn--reveal" onClick={showAnswer}>
+            Δες την απάντηση
+          </button>
+        </div>
+      )}
+
+      {isCorrect && <p className="feedback feedback--correct">✓ Σωστά</p>}
+      {revealed && <p className="feedback feedback--revealed">Η σωστή απάντηση 👆</p>}
+      {!done && result === 'wrong' && (
+        <p className="feedback feedback--wrong">Δοκίμασε ξανά — ή πάτησε «Καθάρισμα»</p>
+      )}
+
+      {done && <Reveal el={el} />}
     </div>
   )
 }
