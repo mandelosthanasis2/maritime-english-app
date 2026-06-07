@@ -1,0 +1,41 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Node ----
+node_modules/
+dist-ssr/
+*.local
+
+# Build output
+.vite/
+
+# ---- Misc ----
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.idea/
+.vscode/
