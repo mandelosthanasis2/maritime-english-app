@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { fetchLesson } from '../api.js'
+import PronunciationPractice from '../components/PronunciationPractice.jsx'
 
 // Robust comparison: trim, lowercase, collapse whitespace, drop punctuation.
 function normalize(value) {
@@ -211,6 +212,11 @@ function ItemCard({ item }) {
     }
   }
 
+  // Speaking items (and listening items that have text) get a pronunciation
+  // practice button.
+  const canPractise =
+    (item.type === 'speaking' || item.type === 'listening') && Boolean(english.text)
+
   return (
     <article className="item-card">
       <div className="item-card__badges">
@@ -219,6 +225,8 @@ function ItemCard({ item }) {
       </div>
 
       {renderBody()}
+
+      {canPractise && <PronunciationPractice referenceText={english.text} />}
 
       {Array.isArray(data.tags) && data.tags.length > 0 && (
         <div className="item-card__tags">

@@ -36,4 +36,26 @@ export function fetchLessonsByTrack(track) {
   return getJSON(`/api/tracks/${encodeURIComponent(track)}/lessons`)
 }
 
+export async function assessPronunciation(audioBlob, referenceText) {
+  const form = new FormData()
+  form.append('audio', audioBlob, 'speech.webm')
+  form.append('reference_text', referenceText)
+
+  const res = await fetch(`${API_BASE_URL}/api/assess-pronunciation`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    let message = `Η αξιολόγηση απέτυχε (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // not JSON; keep the generic message
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
 export { API_BASE_URL }

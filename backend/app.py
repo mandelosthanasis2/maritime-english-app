@@ -1,11 +1,12 @@
 import logging
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from sqlalchemy import func
 
 from db import SessionLocal, init_db
 from models import Item, Lesson
+from pronunciation import PronunciationError, assess_pronunciation
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -114,6 +115,28 @@ def list_lessons_by_track(track):
         )
     finally:
         session.close()
+
+
+@app.route("/api/assess-pronunciation", methods=["POST"])
+def assess_pronunciation_route():
+    audio_file = request.files.get("audio")
+    if audio_file is None:
+        return jsonify({"error": "Missing 'audio' file."}), 400
+
+    reference_text = request.form.get("reference_text", "")
+
+    audio_bytes = audio_file.read()
+    if not audio_bytes:
+        return jsonify({"error": "Uploaded audio is empty."}), 400
+
+    try:
+        result = assess_pronunciation(audio_bytes, reference_text)
+        return jsonify(result)
+    except PronunciationError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    except Exception:  # pragma: no cover - unexpected failure
+        logger.exception("Pronunciation assessment failed unexpectedly")
+        return jsonify({"error": "Internal error during assessment."}), 500
 
 
 if __name__ == "__main__":
