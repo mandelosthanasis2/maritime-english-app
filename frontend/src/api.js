@@ -104,4 +104,40 @@ export async function assessPronunciation(audioBlob, referenceText) {
   return res.json()
 }
 
+// Text-to-speech: returns a cached object URL for the synthesized audio so we
+// never re-synthesize the same text twice within a session.
+const ttsCache = new Map()
+
+export function ttsUrl(text) {
+  const key = (text || '').trim()
+  if (!key) return Promise.reject(new Error('empty text'))
+  if (ttsCache.has(key)) return ttsCache.get(key)
+
+  const promise = fetch(`${API_BASE_URL}/api/tts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: key }),
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        let message = `Η εκφώνηση απέτυχε (${res.status})`
+        try {
+          const body = await res.json()
+          if (body && body.error) message = body.error
+        } catch {
+          // not JSON; keep the generic message
+        }
+        throw new Error(message)
+      }
+      return URL.createObjectURL(await res.blob())
+    })
+    .catch((err) => {
+      ttsCache.delete(key) // allow retry on failure
+      throw err
+    })
+
+  ttsCache.set(key, promise)
+  return promise
+}
+
 export { API_BASE_URL }

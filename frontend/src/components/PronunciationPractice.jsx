@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { assessPronunciation } from '../api.js'
+import useTts from '../useTts.js'
 
 function scoreClass(score) {
   if (score >= 80) return 'good'
@@ -9,6 +10,11 @@ function scoreClass(score) {
 
 function isError(word) {
   return word.error_type && word.error_type !== 'None'
+}
+
+// A word worth practising: flagged as an error, or low accuracy.
+function needsPractice(word) {
+  return isError(word) || (word.accuracy_score ?? 100) < 60
 }
 
 function SubScore({ label, value }) {
@@ -21,6 +27,7 @@ function SubScore({ label, value }) {
 }
 
 export default function PronunciationPractice({ referenceText }) {
+  const { play, playingKey, loadingKey } = useTts()
   // idle | recording | assessing | result | error
   const [phase, setPhase] = useState('idle')
   const [result, setResult] = useState(null)
@@ -147,18 +154,44 @@ export default function PronunciationPractice({ referenceText }) {
 
           {Array.isArray(result.words) && result.words.length > 0 && (
             <div className="pa-words">
-              {result.words.map((w, i) => (
-                <span
-                  key={`${w.word}-${i}`}
-                  className={`pa-word pa-word--${scoreClass(w.accuracy_score ?? 0)}${
-                    isError(w) ? ' pa-word--flag' : ''
-                  }`}
-                  title={isError(w) ? w.error_type : undefined}
-                >
-                  {w.word}
-                </span>
-              ))}
+              {result.words.map((w, i) => {
+                const cls = `pa-word pa-word--${scoreClass(w.accuracy_score ?? 0)}${
+                  isError(w) ? ' pa-word--flag' : ''
+                }`
+                if (needsPractice(w)) {
+                  const key = `w-${i}`
+                  return (
+                    <button
+                      key={`${w.word}-${i}`}
+                      type="button"
+                      className={`${cls} pa-word--tap${
+                        playingKey === key ? ' pa-word--playing' : ''
+                      }`}
+                      onClick={() => play(w.word, key)}
+                      title="Άκου τη σωστή προφορά"
+                    >
+                      {w.word}
+                      {loadingKey === key ? ' ⏳' : ' 🔊'}
+                    </button>
+                  )
+                }
+                return (
+                  <span key={`${w.word}-${i}`} className={cls}>
+                    {w.word}
+                  </span>
+                )
+              })}
             </div>
+          )}
+
+          {referenceText && (
+            <button
+              type="button"
+              className={`pa-listen${playingKey === 'full' ? ' pa-listen--playing' : ''}`}
+              onClick={() => play(referenceText, 'full')}
+            >
+              {loadingKey === 'full' ? '⏳' : '🔊'} Άκου τη σωστή προφορά
+            </button>
           )}
         </div>
 
