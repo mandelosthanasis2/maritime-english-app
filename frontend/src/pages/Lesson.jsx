@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { fetchLesson } from '../api.js'
 import PronunciationPractice from '../components/PronunciationPractice.jsx'
+import RolePlay from '../components/RolePlay.jsx'
 
 // Robust comparison: trim, lowercase, collapse whitespace, drop punctuation.
 function normalize(value) {
@@ -19,20 +20,6 @@ function Reveal({ el }) {
     <div className="reveal">
       {el.translation && <p className="item-card__translation">{el.translation}</p>}
       {el.note && <p className="item-card__note">{el.note}</p>}
-    </div>
-  )
-}
-
-function Dialogue({ english }) {
-  const lines = Array.isArray(english.lines) ? english.lines : []
-  return (
-    <div className="dialogue">
-      {english.scenario && <p className="dialogue__scenario">{english.scenario}</p>}
-      {lines.map((line, idx) => (
-        <p key={idx} className="dialogue__line">
-          <span className="dialogue__speaker">{line.speaker}:</span> {line.text}
-        </p>
-      ))}
     </div>
   )
 }
@@ -197,10 +184,12 @@ function ItemCard({ item }) {
         return <WordOrder english={english} el={el} />
       case 'dialogue':
         return (
-          <>
-            <Dialogue english={english} />
-            <Reveal el={el} />
-          </>
+          <RolePlay
+            itemId={item.item_id}
+            scenario={english.scenario}
+            scenarioEl={el.translation}
+            userRole={english.user_role}
+          />
         )
       default:
         return (

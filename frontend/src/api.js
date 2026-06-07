@@ -36,6 +36,52 @@ export function fetchLessonsByTrack(track) {
   return getJSON(`/api/tracks/${encodeURIComponent(track)}/lessons`)
 }
 
+export async function roleplayChat({ itemId, scenario, userRole, history, userMessage }) {
+  const res = await fetch(`${API_BASE_URL}/api/roleplay/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      item_id: itemId,
+      scenario,
+      user_role: userRole,
+      history,
+      user_message: userMessage,
+    }),
+  })
+  if (!res.ok) {
+    let message = `Σφάλμα role-play (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // not JSON; keep the generic message
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
+export async function transcribeAudio(audioBlob) {
+  const form = new FormData()
+  form.append('audio', audioBlob, 'speech.webm')
+
+  const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    let message = `Η μεταγραφή απέτυχε (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // not JSON; keep the generic message
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
 export async function assessPronunciation(audioBlob, referenceText) {
   const form = new FormData()
   form.append('audio', audioBlob, 'speech.webm')

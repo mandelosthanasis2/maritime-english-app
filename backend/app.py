@@ -7,6 +7,8 @@ from sqlalchemy import func
 from db import SessionLocal, init_db
 from models import Item, Lesson
 from pronunciation import PronunciationError, assess_pronunciation
+from roleplay import RoleplayError, chat as roleplay_chat
+from transcription import transcribe
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -137,6 +139,44 @@ def assess_pronunciation_route():
     except Exception:  # pragma: no cover - unexpected failure
         logger.exception("Pronunciation assessment failed unexpectedly")
         return jsonify({"error": "Internal error during assessment."}), 500
+
+
+@app.route("/api/transcribe", methods=["POST"])
+def transcribe_route():
+    audio_file = request.files.get("audio")
+    if audio_file is None:
+        return jsonify({"error": "Missing 'audio' file."}), 400
+
+    audio_bytes = audio_file.read()
+    if not audio_bytes:
+        return jsonify({"error": "Uploaded audio is empty."}), 400
+
+    try:
+        return jsonify(transcribe(audio_bytes))
+    except PronunciationError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    except Exception:  # pragma: no cover - unexpected failure
+        logger.exception("Transcription failed unexpectedly")
+        return jsonify({"error": "Internal error during transcription."}), 500
+
+
+@app.route("/api/roleplay/chat", methods=["POST"])
+def roleplay_chat_route():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        result = roleplay_chat(
+            scenario=payload.get("scenario", ""),
+            user_role=payload.get("user_role", ""),
+            history=payload.get("history", []),
+            user_message=payload.get("user_message", ""),
+        )
+        return jsonify(result)
+    except RoleplayError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    except Exception:  # pragma: no cover - unexpected failure
+        logger.exception("Role-play chat failed unexpectedly")
+        return jsonify({"error": "Internal error during role-play."}), 500
 
 
 if __name__ == "__main__":

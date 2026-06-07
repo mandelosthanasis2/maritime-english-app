@@ -608,3 +608,224 @@ body {
   text-decoration: underline wavy var(--wrong);
   text-underline-offset: 3px;
 }
+
+/* Role-play chat */
+.rp {
+  margin-top: 0.4rem;
+}
+
+.rp-scenario {
+  background: var(--teal-soft);
+  border-radius: 12px;
+  padding: 0.8rem 0.9rem;
+  margin-bottom: 0.9rem;
+}
+
+.rp-scenario--compact {
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.7rem;
+}
+
+.rp-scenario__el {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--navy);
+  font-weight: 600;
+}
+
+.rp-scenario__en {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.rp-scenario__role {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.rp-scenario__role strong {
+  color: var(--teal);
+}
+
+.rp-start {
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  width: 100%;
+  background: var(--teal);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 0.7rem 1rem;
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+
+.rp-start:active {
+  transform: scale(0.99);
+}
+
+.rp-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: 22rem;
+  overflow-y: auto;
+  padding: 0.2rem;
+}
+
+.rp-row {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
+}
+
+.rp-row--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.rp-row--assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.rp-bubble {
+  padding: 0.55rem 0.8rem;
+  border-radius: 14px;
+  font-size: 1rem;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.rp-bubble--assistant {
+  background: #eef3f5;
+  color: var(--ink);
+  border-bottom-left-radius: 4px;
+}
+
+.rp-bubble--user {
+  background: var(--teal);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.rp-correction {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: #8a6d00;
+  background: #fff6df;
+  border-radius: 8px;
+  padding: 0.3rem 0.55rem;
+}
+
+/* Typing indicator */
+.rp-typing {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.rp-typing span {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  animation: rp-bounce 1.2s infinite ease-in-out;
+}
+
+.rp-typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.rp-typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes rp-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+.rp-error {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  color: var(--wrong);
+  font-weight: 600;
+}
+
+.rp-inputrow {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.8rem;
+}
+
+.rp-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1rem;
+  padding: 0.55rem 0.75rem;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  outline: none;
+}
+
+.rp-input:focus {
+  border-color: var(--teal);
+}
+
+.rp-mic,
+.rp-send {
+  font: inherit;
+  cursor: pointer;
+  border: none;
+  border-radius: 999px;
+  transition: transform 0.1s ease, opacity 0.1s ease, background 0.1s ease;
+}
+
+.rp-mic {
+  width: 2.6rem;
+  height: 2.6rem;
+  flex-shrink: 0;
+  font-size: 1.1rem;
+  background: var(--teal-soft);
+}
+
+.rp-mic--active {
+  background: var(--wrong-bg);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.rp-mic:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rp-send {
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0.55rem 0.95rem;
+  background: var(--teal);
+  color: #fff;
+}
+
+.rp-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rp-restart {
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-top: 0.7rem;
+  background: transparent;
+  border: none;
+  color: var(--ink-faint);
+  text-decoration: underline;
+}
