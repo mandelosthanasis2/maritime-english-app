@@ -19,8 +19,12 @@ from models import Item, Lesson
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Resolve the lesson file relative to this script so it works regardless of the
+# current working directory (e.g. /app on Railway). The content lives inside the
+# backend folder so the service is self-contained.
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONTENT_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "content", "engine_orders_lesson01_v2.json"
+    BACKEND_DIR, "content", "engine_orders_lesson01_v2.json"
 )
 
 # Lesson-level fields copied into structured columns. Everything item-level is
