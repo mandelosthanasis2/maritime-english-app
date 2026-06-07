@@ -1121,3 +1121,84 @@ body {
 .player__done .player__start {
   max-width: 22rem;
 }
+
+/* ---- Exercise help (hint / show answer) ---- */
+:root {
+  --amber: #b97d00;
+  --amber-bg: #fff6df;
+  --amber-border: #e8c97a;
+}
+
+/* fill_gap: option states from help */
+.option--eliminated {
+  opacity: 0.4;
+  text-decoration: line-through;
+  cursor: default;
+}
+
+.option--revealed {
+  background: var(--amber-bg);
+  border-color: var(--amber-border);
+  color: var(--amber);
+  font-weight: 700;
+}
+
+/* word_order: revealed answer row + hinted chip */
+.answer-row--revealed {
+  border-style: solid;
+  border-color: var(--amber-border);
+  background: var(--amber-bg);
+}
+
+.answer-row--revealed .chip--placed:disabled {
+  color: var(--amber);
+}
+
+.chip--hint {
+  border-color: var(--amber-border);
+  background: var(--amber-bg);
+  animation: tts-pulse 1.1s ease-in-out infinite;
+}
+
+/* Help action buttons */
+.help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.help-btn {
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 0.45rem 0.95rem;
+  transition: transform 0.1s ease, background 0.1s ease, opacity 0.1s ease;
+}
+
+.help-btn:hover:not(:disabled) {
+  background: #eef3f5;
+}
+
+.help-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.help-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.help-btn--reveal {
+  color: var(--amber);
+  border-color: var(--amber-border);
+}
+
+.feedback--revealed {
+  color: var(--amber);
+}
