@@ -2157,3 +2157,75 @@ h3 {
   font-size: 0.82rem;
   color: var(--ink-faint);
 }
+
+/* Grouped admin (suggested lessons) */
+.admin-lesson {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--teal);
+  border-radius: var(--r-md);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: #fcfdfe;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.admin-lesson--existing {
+  border-left-color: var(--ink-faint);
+  background: #f6f8f9;
+}
+
+.admin-lesson__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-lesson__title {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--navy);
+}
+
+.admin-lesson__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-lesson__actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px dashed var(--border);
+}
+
+.admin-lesson__items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.admin-item {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 0.8rem;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-item__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-item__actions {
+  display: flex;
+  gap: 0.5rem;
+}

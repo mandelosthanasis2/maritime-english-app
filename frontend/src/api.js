@@ -156,6 +156,29 @@ export function adminListItems(status = 'draft') {
   return adminRequest(`/api/admin/items?status=${encodeURIComponent(status)}`)
 }
 
+export function adminDraftLessons() {
+  return adminRequest('/api/admin/draft-lessons')
+}
+
+export function adminApproveLesson(lessonId) {
+  return adminRequest(`/api/admin/lessons/${encodeURIComponent(lessonId)}/approve`, {
+    method: 'POST',
+  })
+}
+
+export function adminEditLesson(lessonId, changes) {
+  return adminRequest(`/api/admin/lessons/${encodeURIComponent(lessonId)}`, {
+    method: 'POST',
+    body: changes,
+  })
+}
+
+export function adminDeleteLesson(lessonId) {
+  return adminRequest(`/api/admin/lessons/${encodeURIComponent(lessonId)}`, {
+    method: 'DELETE',
+  })
+}
+
 export async function adminGenerateItems({ sourceText, kind, pageRange, pdfFile }) {
   // Multipart so a PDF can be uploaded alongside the text fields. Don't set
   // Content-Type — the browser adds the multipart boundary.

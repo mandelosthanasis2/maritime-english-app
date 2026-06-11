@@ -41,23 +41,31 @@ SYSTEM_PROMPT = """You are an expert English curriculum designer who creates pra
   - "maritime": maritime/nautical English grounded in IMO Standard Marine Communication Phrases (SMCP) and shipboard practice (engine room, bridge, deck, cargo, safety).
   - "grammar": general English grammar and vocabulary for everyday/learner use.
 
-You receive a passage of source material and produce practice items derived from it.
+You receive a passage of source material. You GROUP the practice items you create into one or more coherent LESSONS (e.g. "The Bridge", "Steering & Helm Orders", "Radar Basics", or for grammar "Present Perfect", "Comparatives"). A passage may yield several lessons; each lesson bundles related items.
 
 DECIDING THE TRACK
-- If told the kind is "maritime" or "grammar", use that.
-- If told "auto", decide yourself per passage: nautical/shipboard terminology and procedures -> "maritime"; general English grammar/usage -> "grammar".
-- Put the chosen value in each item's "track" field ("maritime" or "grammar").
+- If told the kind is "maritime" or "grammar", use that for every lesson.
+- If told "auto", decide per lesson: nautical/shipboard content -> "maritime"; general English grammar/usage -> "grammar".
 
-YOU ALSO DECIDE, per item: "difficulty" (CEFR A1|A2|B1|B2|C1), "level" (same as difficulty), "skill_type", "type", and the target "ship_types" (use ["all"] for general grammar).
+AVOIDING DUPLICATE LESSONS
+- You will be given a list of EXISTING LESSON TITLES. If the content you are creating fits one of them, reuse that EXACT title in "lesson_title_en" (so it is merged, not duplicated). Only invent a new title when none fits.
 
-ITEM JSON SCHEMA (output an array of these objects):
+OUTPUT: a JSON array of LESSON objects:
 {
+  "lesson_title_en": "<English lesson title>",
+  "lesson_title_el": "<Greek lesson title>",
+  "lesson_description_el": "<one short Greek sentence describing the lesson>",
   "track": "maritime" | "grammar",
+  "items": [ <item objects, see schema below> ]
+}
+
+Each ITEM object:
+{
   "type": "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "dialogue" | "translation",
-  "level": CEFR band,
+  "level": CEFR band "A1|A2|B1|B2|C1",
   "difficulty": same CEFR band,
   "skill_type": "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "roleplay",
-  "ship_types": array of strings,
+  "ship_types": array of strings (use ["all"] for general grammar),
   "english": { ... shape depends on skill_type, see below ... },
   "explanations": { "el": { "translation": "<Greek>", "note": "<Greek note, see rules>", "prompt": "<optional Greek prompt for translation items>" } },
   "pronunciation_focus": array of short strings (may be empty),
@@ -79,7 +87,7 @@ CRITICAL RULES
 - explanations.el text (translation/note/prompt) must be in Greek.
 - Do NOT invent an "audio_url" or "id" field; omit them.
 - Map skill_type to type: roleplay -> type "dialogue"; translation -> type "translation" (skill_type "speaking"); otherwise type matches skill_type.
-- Output ONLY a valid JSON array. No markdown, no code fences, no prose."""
+- Output ONLY a valid JSON array of lesson objects. No markdown, no code fences, no prose."""
 
 
 class AdminGenError(Exception):
@@ -211,55 +219,90 @@ def _parse_json_array(text):
     return data
 
 
-def _chunk_user_prompt(chunk, kind):
+def _norm_title(title):
+    """Normalise a lesson title for semantic-ish dedup (lower, strip punctuation)."""
+    return (
+        (title or "")
+        .strip()
+        .lower()
+        .replace("—", " ")
+        .replace("-", " ")
+        .replace("&", " and ")
+    )
+    # (whitespace collapsed below)
+
+
+def _norm(title):
+    return re.sub(r"\s+", " ", _norm_title(title)).strip()
+
+
+def _resolve_track(value, kind):
+    if kind in ("grammar", "maritime"):
+        return kind
+    track = (value or "").strip().lower()
+    return track if track in ALLOWED_TRACKS else "maritime"
+
+
+def _chunk_user_prompt(chunk, kind, known_titles):
     if kind == "grammar":
-        kind_line = 'The content kind is "grammar" (general English). Set track="grammar" on every item.'
+        kind_line = 'The content kind is "grammar" (general English): set track="grammar".'
     elif kind == "maritime":
-        kind_line = 'The content kind is "maritime". Set track="maritime" on every item.'
+        kind_line = 'The content kind is "maritime": set track="maritime".'
     else:
         kind_line = (
-            'The content kind is "auto": decide per item whether it is grammar or '
-            "maritime and set the track field accordingly."
+            'The content kind is "auto": decide per lesson whether it is grammar or '
+            "maritime and set the track accordingly."
         )
+    if known_titles:
+        titles_block = (
+            "EXISTING LESSON TITLES (reuse one EXACTLY in lesson_title_en if your "
+            "content fits it, to avoid duplicates):\n- "
+            + "\n- ".join(known_titles)
+            + "\n\n"
+        )
+    else:
+        titles_block = ""
     return (
         f"{kind_line}\n\n"
-        f"Create up to {MAX_ITEMS_PER_CHUNK} practice items derived from the passage "
-        "below. If it already contains exercises with answers, convert those. "
-        "Remember: grammar items must include a clear Greek rule explanation in "
+        f"{titles_block}"
+        "Group the practice items you create from the passage below into one or more "
+        "lessons. If the passage already contains exercises with answers, convert "
+        "those. Grammar items must include a clear Greek rule explanation in "
         "explanations.el.note.\n\n"
         f"<source_passage>\n{chunk}\n</source_passage>\n\n"
-        "Return ONLY the JSON array."
+        "Return ONLY the JSON array of lesson objects."
     )
 
 
-def _generate_chunk(client, anthropic, chunk, kind):
+def _generate_chunk_lessons(client, anthropic, chunk, kind, known_titles):
     try:
         response = client.messages.create(
             model=MODEL,
             max_tokens=8000,
             system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": _chunk_user_prompt(chunk, kind)}],
+            messages=[
+                {"role": "user", "content": _chunk_user_prompt(chunk, kind, known_titles)}
+            ],
             output_config={"effort": "medium"},
         )
     except anthropic.APIError as exc:
         logger.warning("Anthropic call failed for a chunk: %s", exc)
-        raise AdminGenError("The item generator is unavailable right now.", 502) from exc
+        raise AdminGenError("The generator is unavailable right now.", 502) from exc
 
     text = "".join(b.text for b in response.content if b.type == "text")
-    items = _parse_json_array(text)
-
-    # Normalise the track field according to the requested kind.
-    for item in items:
-        if kind in ("grammar", "maritime"):
-            item["track"] = kind
-        else:
-            track = (item.get("track") or "").strip().lower()
-            item["track"] = track if track in ALLOWED_TRACKS else "maritime"
-    return items
+    return _parse_json_array(text)
 
 
-def generate_items(source_text, kind):
-    """Chunk the source text and generate items for each chunk; return the list."""
+def generate_lessons(source_text, kind, existing_lessons=None):
+    """Chunk the text and produce de-duplicated suggested lessons (each with items).
+
+    `existing_lessons` is a list of {"lesson_id", "title", "track"} already in the
+    DB; a chunk that matches one of their titles attaches its items there instead
+    of creating a new draft lesson.
+
+    Returns a list of dicts:
+      {title_en, title_el, description_el, track, existing_lesson_id|None, items:[...]}
+    """
     kind = (kind or "auto").strip().lower()
     if kind not in ALLOWED_KINDS:
         kind = "auto"
@@ -279,20 +322,70 @@ def generate_items(source_text, kind):
         logger.exception("anthropic SDK failed to import.")
         raise AdminGenError("Item generation is not available on the server.", 503) from exc
 
+    existing_lessons = existing_lessons or []
+    existing_by_norm = {_norm(l["title"]): l for l in existing_lessons if l.get("title")}
+
     client = anthropic.Anthropic()
     chunks = chunk_text(text)
-    logger.info("Generating items from %d chunk(s), kind=%s", len(chunks), kind)
+    logger.info("Generating lessons from %d chunk(s), kind=%s", len(chunks), kind)
 
-    items, failures = [], 0
+    proposed = []  # ordered list of lesson dicts
+    by_norm = {}  # norm title -> proposed dict (this run)
+    failures = 0
+
     for i, chunk in enumerate(chunks):
+        known_titles = [p["title_en"] for p in proposed] + [
+            l["title"] for l in existing_lessons if l.get("title")
+        ]
         try:
-            items.extend(_generate_chunk(client, anthropic, chunk, kind))
+            lessons = _generate_chunk_lessons(client, anthropic, chunk, kind, known_titles)
         except AdminGenError as exc:
             failures += 1
             logger.warning("Chunk %d/%d failed: %s", i + 1, len(chunks), exc)
+            continue
 
-    if not items:
+        for lesson in lessons:
+            title_en = (lesson.get("lesson_title_en") or "").strip()
+            items = lesson.get("items")
+            if not title_en or not isinstance(items, list) or not items:
+                continue
+            norm = _norm(title_en)
+            track = _resolve_track(lesson.get("track"), kind)
+
+            if norm in by_norm:
+                by_norm[norm]["items"].extend(items)
+            elif norm in existing_by_norm:
+                match = existing_by_norm[norm]
+                entry = {
+                    "title_en": match["title"],
+                    "title_el": lesson.get("lesson_title_el"),
+                    "description_el": lesson.get("lesson_description_el"),
+                    "track": match.get("track") or track,
+                    "existing_lesson_id": match["lesson_id"],
+                    "items": list(items),
+                }
+                by_norm[norm] = entry
+                proposed.append(entry)
+            else:
+                entry = {
+                    "title_en": title_en,
+                    "title_el": lesson.get("lesson_title_el"),
+                    "description_el": lesson.get("lesson_description_el"),
+                    "track": track,
+                    "existing_lesson_id": None,
+                    "items": list(items),
+                }
+                by_norm[norm] = entry
+                proposed.append(entry)
+
+    if not proposed:
         raise AdminGenError("Η παραγωγή απέτυχε για όλα τα τμήματα. Δοκίμασε ξανά.", 502)
 
-    logger.info("Generated %d item(s) (%d chunk failure(s)).", len(items), failures)
-    return items
+    total_items = sum(len(p["items"]) for p in proposed)
+    logger.info(
+        "Proposed %d lesson(s), %d item(s) (%d chunk failure(s)).",
+        len(proposed),
+        total_items,
+        failures,
+    )
+    return proposed

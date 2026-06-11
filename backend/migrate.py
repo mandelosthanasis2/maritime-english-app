@@ -110,6 +110,21 @@ def run():
         result = conn.execute(text(SKILL_TYPE_BACKFILL_SQL))
         logger.info("Backfilled skill_type for %s row(s).", result.rowcount)
 
+        # Lessons: add status (draft|approved) and an optional Greek title.
+        lesson_columns = {c["name"] for c in insp.get_columns("lessons")}
+        if "status" not in lesson_columns:
+            conn.execute(
+                text("ALTER TABLE lessons ADD COLUMN status VARCHAR NOT NULL DEFAULT 'approved'")
+            )
+            logger.info("Added lessons.status (default 'approved').")
+        else:
+            logger.info("lessons.status already exists — skipping.")
+        if "title_el" not in lesson_columns:
+            conn.execute(text("ALTER TABLE lessons ADD COLUMN title_el VARCHAR"))
+            logger.info("Added lessons.title_el.")
+        else:
+            logger.info("lessons.title_el already exists — skipping.")
+
         # Allow draft items with no lesson: relax items.lesson_id NOT NULL.
         if lesson_id_not_null:
             if is_postgres:

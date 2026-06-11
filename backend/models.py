@@ -36,11 +36,14 @@ class Lesson(Base):
     track = Column(String)
     module = Column(String)
     title = Column(String)
+    title_el = Column(String)  # Greek title (AI-suggested lessons)
     description = Column(Text)
     source = Column(Text)
     interface_language = Column(String)
     target_language = Column(String)
     version = Column(Integer)
+    # draft | approved — AI-suggested lessons start as draft; existing default approved.
+    status = Column(String, nullable=False, server_default="approved")
 
     items = relationship(
         "Item",

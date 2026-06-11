@@ -10,9 +10,10 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from admin import (
     ALLOWED_DIFFICULTY,
     ALLOWED_SKILL_TYPES,
+    ALLOWED_TRACKS,
     AdminGenError,
     extract_text_from_pdf,
-    generate_items,
+    generate_lessons,
 )
 from auth import AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
@@ -86,8 +87,13 @@ def serialize_item(item):
 
 
 def item_counts(session):
-    """Return a {lesson_id: count} map in a single query."""
-    rows = session.query(Item.lesson_id, func.count(Item.id)).group_by(Item.lesson_id).all()
+    """Return a {lesson_id: approved-item count} map in a single query."""
+    rows = (
+        session.query(Item.lesson_id, func.count(Item.id))
+        .filter(Item.status == "approved")
+        .group_by(Item.lesson_id)
+        .all()
+    )
     return dict(rows)
 
 
@@ -136,7 +142,13 @@ def list_lessons():
     session = SessionLocal()
     try:
         counts = item_counts(session)
-        lessons = session.query(Lesson).order_by(Lesson.lesson_id).all()
+        # Only approved lessons are user-visible (drafts stay hidden).
+        lessons = (
+            session.query(Lesson)
+            .filter(Lesson.status == "approved")
+            .order_by(Lesson.lesson_id)
+            .all()
+        )
         return jsonify(
             [serialize_lesson_meta(l, counts.get(l.lesson_id, 0)) for l in lessons]
         )
@@ -148,15 +160,20 @@ def list_lessons():
 def get_lesson(lesson_id):
     session = SessionLocal()
     try:
-        lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
+        lesson = (
+            session.query(Lesson)
+            .filter_by(lesson_id=lesson_id, status="approved")
+            .one_or_none()
+        )
         if lesson is None:
             return (
                 jsonify({"error": f"Lesson '{lesson_id}' not found."}),
                 404,
             )
-        payload = serialize_lesson_meta(lesson, len(lesson.items))
-        # lesson.items is ordered by order_index via the relationship.
-        payload["items"] = [serialize_item(item) for item in lesson.items]
+        # Only approved items are served to learners.
+        approved_items = [i for i in lesson.items if i.status == "approved"]
+        payload = serialize_lesson_meta(lesson, len(approved_items))
+        payload["items"] = [serialize_item(item) for item in approved_items]
         return jsonify(payload)
     finally:
         session.close()
@@ -169,7 +186,7 @@ def list_lessons_by_track(track):
         counts = item_counts(session)
         lessons = (
             session.query(Lesson)
-            .filter_by(track=track)
+            .filter_by(track=track, status="approved")
             .order_by(Lesson.lesson_id)
             .all()
         )
@@ -361,10 +378,26 @@ def serialize_admin_item(item):
     }
 
 
-def store_generated_item(session, raw, fallback_difficulty, order_index):
-    """Persist one generated item dict as a draft Item and return it."""
+def serialize_admin_lesson(lesson, items):
+    return {
+        "lesson_id": lesson.lesson_id,
+        "title": lesson.title,
+        "title_el": lesson.title_el,
+        "description": lesson.description,
+        "track": lesson.track,
+        "status": lesson.status,
+        # True when items are being attached to an already-approved lesson.
+        "existing": lesson.status == "approved",
+        "items": [serialize_admin_item(i) for i in items],
+    }
+
+
+def store_generated_item(session, raw, lesson_id, track, fallback_difficulty, order_index):
+    """Persist one generated item dict as a draft Item under a lesson; return it."""
     data = dict(raw)
     data.pop("audio_url", None)
+    if track:
+        data["track"] = track
 
     item_type = data.get("type") or data.get("skill_type") or "vocabulary"
     skill_type = data.get("skill_type") or _SKILL_TYPE_FROM_TYPE.get(item_type, item_type)
@@ -381,7 +414,7 @@ def store_generated_item(session, raw, fallback_difficulty, order_index):
 
     row = Item(
         item_id=item_id,
-        lesson_id=None,  # drafts aren't attached to a lesson yet
+        lesson_id=lesson_id,
         type=item_type,
         level=level,
         difficulty=difficulty,
@@ -412,32 +445,68 @@ def admin_generate_items():
     source_text = field("source_text", "")
     pdf_file = request.files.get("pdf")
 
+    session = SessionLocal()
     try:
         if pdf_file is not None:
             pdf_text = extract_text_from_pdf(pdf_file.read(), page_range)
             source_text = (
                 f"{pdf_text}\n\n{source_text}".strip() if source_text.strip() else pdf_text
             )
-        generated = generate_items(source_text=source_text, kind=kind)
+        existing = [
+            {"lesson_id": l.lesson_id, "title": l.title, "track": l.track}
+            for l in session.query(Lesson).all()
+            if l.title
+        ]
+        proposed = generate_lessons(
+            source_text=source_text, kind=kind, existing_lessons=existing
+        )
     except AdminGenError as exc:
+        session.close()
         return jsonify({"error": str(exc)}), exc.status_code
 
-    fallback_difficulty = "B1"
-
-    session = SessionLocal()
     try:
-        base = (
-            session.query(func.coalesce(func.max(Item.order_index), -1))
-            .filter(Item.lesson_id.is_(None))
-            .scalar()
-        )
-        stored = []
-        for offset, raw in enumerate(generated, start=1):
-            stored.append(
-                store_generated_item(session, raw, fallback_difficulty, base + offset)
+        result = []
+        for entry in proposed:
+            if entry["existing_lesson_id"]:
+                lesson = (
+                    session.query(Lesson)
+                    .filter_by(lesson_id=entry["existing_lesson_id"])
+                    .one_or_none()
+                )
+                if lesson is None:  # vanished between read and write — skip
+                    continue
+            else:
+                lesson = Lesson(
+                    lesson_id=f"dl_{uuid.uuid4().hex[:12]}",
+                    track=entry["track"],
+                    module=None,
+                    title=entry["title_en"],
+                    title_el=entry.get("title_el"),
+                    description=entry.get("description_el"),
+                    interface_language="el",
+                    target_language="en",
+                    version=1,
+                    status="draft",
+                )
+                session.add(lesson)
+                session.flush()
+
+            base = (
+                session.query(func.coalesce(func.max(Item.order_index), -1))
+                .filter(Item.lesson_id == lesson.lesson_id)
+                .scalar()
             )
+            stored = []
+            for offset, raw in enumerate(entry["items"], start=1):
+                stored.append(
+                    store_generated_item(
+                        session, raw, lesson.lesson_id, entry["track"], "B1", base + offset
+                    )
+                )
+            result.append((lesson, stored))
+
         session.commit()
-        return jsonify({"items": [serialize_admin_item(i) for i in stored]})
+        return jsonify({"lessons": [serialize_admin_lesson(l, items) for l, items in result]})
     except IntegrityError as exc:
         session.rollback()
         logger.exception("Storing generated items failed (integrity error)")
@@ -577,6 +646,139 @@ def admin_delete_item(item_id):
         session.delete(item)
         session.commit()
         return jsonify({"deleted": item_id})
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/draft-lessons", methods=["GET"])
+def admin_draft_lessons():
+    """Draft items grouped by their lesson, for the review UI."""
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        draft_items = (
+            session.query(Item)
+            .filter(Item.status == "draft")
+            .order_by(Item.order_index)
+            .all()
+        )
+
+        # Group draft items by lesson_id (None grouped separately).
+        grouped = {}
+        for item in draft_items:
+            grouped.setdefault(item.lesson_id, []).append(item)
+
+        # Include empty draft lessons too (so they can be reviewed/deleted).
+        draft_lessons = session.query(Lesson).filter(Lesson.status == "draft").all()
+        for lesson in draft_lessons:
+            grouped.setdefault(lesson.lesson_id, [])
+
+        lessons_payload = []
+        ungrouped = []
+        for lesson_id, items in grouped.items():
+            if lesson_id is None:
+                ungrouped = [serialize_admin_item(i) for i in items]
+                continue
+            lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
+            if lesson is None:
+                ungrouped.extend(serialize_admin_item(i) for i in items)
+                continue
+            lessons_payload.append(serialize_admin_lesson(lesson, items))
+
+        # Draft lessons first, then existing lessons that have draft items.
+        lessons_payload.sort(key=lambda l: (l["existing"], l["title"] or ""))
+        return jsonify({"lessons": lessons_payload, "ungrouped": ungrouped})
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/lessons/<lesson_id>/approve", methods=["POST"])
+def admin_approve_lesson(lesson_id):
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
+        if lesson is None:
+            return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
+
+        lesson.status = "approved"  # publish the lesson
+        items = session.query(Item).filter_by(lesson_id=lesson_id, status="draft").all()
+        for item in items:
+            item.status = "approved"
+        session.commit()
+
+        approved = session.query(Item).filter_by(lesson_id=lesson_id).order_by(Item.order_index).all()
+        return jsonify(serialize_admin_lesson(lesson, approved))
+    except Exception:  # pragma: no cover
+        session.rollback()
+        logger.exception("Approving lesson failed")
+        return jsonify({"error": "Internal error approving lesson."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/lessons/<lesson_id>", methods=["POST"])
+def admin_edit_lesson(lesson_id):
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    payload = request.get_json(silent=True) or {}
+    session = SessionLocal()
+    try:
+        lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
+        if lesson is None:
+            return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
+
+        if "title" in payload:
+            lesson.title = payload["title"]
+        if "title_el" in payload:
+            lesson.title_el = payload["title_el"]
+        if "description" in payload:
+            lesson.description = payload["description"]
+        if "track" in payload:
+            if payload["track"] not in ALLOWED_TRACKS:
+                return jsonify({"error": "Invalid track."}), 400
+            lesson.track = payload["track"]
+
+        session.commit()
+        items = session.query(Item).filter_by(lesson_id=lesson_id).order_by(Item.order_index).all()
+        return jsonify(serialize_admin_lesson(lesson, items))
+    except Exception:  # pragma: no cover
+        session.rollback()
+        logger.exception("Editing lesson failed")
+        return jsonify({"error": "Internal error editing lesson."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/lessons/<lesson_id>", methods=["DELETE"])
+def admin_delete_lesson(lesson_id):
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
+        if lesson is None:
+            return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
+        if lesson.status != "draft":
+            return jsonify({"error": "Only draft lessons can be deleted."}), 409
+        # Cascades to its items via the relationship.
+        session.delete(lesson)
+        session.commit()
+        return jsonify({"deleted": lesson_id})
     finally:
         session.close()
 
