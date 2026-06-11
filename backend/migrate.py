@@ -1,7 +1,8 @@
 """Idempotent migration: add editorial fields to the `items` table.
 
 Adds three columns with safe defaults, without touching existing data:
-  - difficulty  (CEFR: A1 | A2 | B1 | B2 | C1) — default 'B1'
+  - difficulty  (CEFR: A1 | A2 | B1 | B2 | C1) — backfilled from each item's
+                existing `level` (A1->A1, A2->A2, ...), fallback 'B1'
   - status      (draft | approved)             — default 'approved'
   - skill_type  (vocabulary | listening | fill_gap | word_order | speaking | roleplay)
 
@@ -36,6 +37,17 @@ SKILL_TYPE_BACKFILL_SQL = """
     WHERE skill_type IS NULL
 """
 
+# Backfill difficulty from each item's existing CEFR `level` (A1->A1 etc.),
+# falling back to B1 when level is missing or not a known CEFR band. Only run
+# when the column was just created, so curated values survive re-runs.
+DIFFICULTY_BACKFILL_SQL = """
+    UPDATE items
+    SET difficulty = CASE
+        WHEN level IN ('A1', 'A2', 'B1', 'B2', 'C1') THEN level
+        ELSE 'B1'
+    END
+"""
+
 
 def _columns(insp, table):
     return {col["name"] for col in insp.get_columns(table)}
@@ -53,7 +65,13 @@ def run():
             conn.execute(
                 text("ALTER TABLE items ADD COLUMN difficulty VARCHAR NOT NULL DEFAULT 'B1'")
             )
-            logger.info("Added items.difficulty (default 'B1').")
+            # Fresh column: copy each item's CEFR level (fallback B1). Done only
+            # here so curated values are never overwritten on later runs.
+            result = conn.execute(text(DIFFICULTY_BACKFILL_SQL))
+            logger.info(
+                "Added items.difficulty; backfilled from level for %s row(s).",
+                result.rowcount,
+            )
         else:
             logger.info("items.difficulty already exists — skipping.")
 

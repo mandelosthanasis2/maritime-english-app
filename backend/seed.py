@@ -43,6 +43,8 @@ LESSON_FIELDS = (
 # Map source `type` onto the editorial skill_type vocabulary.
 SKILL_TYPE_MAP = {"dialogue": "roleplay", "translation": "speaking"}
 
+CEFR_BANDS = {"A1", "A2", "B1", "B2", "C1"}
+
 
 def skill_type_for(item):
     """Resolve skill_type from an explicit override or the item's type."""
@@ -51,6 +53,15 @@ def skill_type_for(item):
         return explicit
     item_type = item.get("type")
     return SKILL_TYPE_MAP.get(item_type, item_type)
+
+
+def difficulty_for(item):
+    """Resolve difficulty: explicit override, else the item's CEFR level, else B1."""
+    explicit = item.get("difficulty")
+    if explicit:
+        return explicit
+    level = item.get("level")
+    return level if level in CEFR_BANDS else "B1"
 
 
 def seed(path=None):
@@ -91,7 +102,7 @@ def seed(path=None):
                 created += 1
                 # Editorial fields are set only on insert so curated values are
                 # never overwritten when re-seeding content.
-                row.difficulty = item.get("difficulty", "B1")
+                row.difficulty = difficulty_for(item)
                 row.status = item.get("status", "approved")
                 row.skill_type = skill_type_for(item)
             else:
