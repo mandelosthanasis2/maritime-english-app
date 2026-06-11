@@ -96,6 +96,67 @@ export async function completeLesson(lessonId) {
   return res.json()
 }
 
+// --- Admin (requires the ADMIN_EMAIL account) -------------------------------
+
+async function adminRequest(path, { method = 'GET', body } = {}) {
+  const headers = await authHeaders()
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const data = await res.json()
+      if (data && data.error) message = data.error
+    } catch {
+      // keep generic
+    }
+    const err = new Error(message)
+    err.status = res.status
+    throw err
+  }
+  return res.json()
+}
+
+export function adminListItems(status = 'draft') {
+  return adminRequest(`/api/admin/items?status=${encodeURIComponent(status)}`)
+}
+
+export function adminGenerateItems({ topic, role, sourceText, numItems, difficulty }) {
+  return adminRequest('/api/admin/generate-items', {
+    method: 'POST',
+    body: {
+      topic,
+      role,
+      source_text: sourceText,
+      num_items: numItems,
+      difficulty,
+    },
+  })
+}
+
+export function adminEditItem(itemId, changes) {
+  return adminRequest(`/api/admin/items/${encodeURIComponent(itemId)}`, {
+    method: 'POST',
+    body: changes,
+  })
+}
+
+export function adminApproveItem(itemId) {
+  return adminRequest(`/api/admin/items/${encodeURIComponent(itemId)}/approve`, {
+    method: 'POST',
+  })
+}
+
+export function adminDeleteItem(itemId) {
+  return adminRequest(`/api/admin/items/${encodeURIComponent(itemId)}`, {
+    method: 'DELETE',
+  })
+}
+
 export async function roleplayChat({ itemId, scenario, userRole, history, userMessage }) {
   const res = await fetch(`${API_BASE_URL}/api/roleplay/chat`, {
     method: 'POST',

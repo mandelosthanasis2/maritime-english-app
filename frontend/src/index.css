@@ -1922,3 +1922,206 @@ h3 {
   font-size: 0.88rem;
   color: var(--ink-soft);
 }
+
+/* ============================================================
+   Admin (content management)
+   ============================================================ */
+.admin {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.admin__title {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--navy);
+}
+
+.admin-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 1.2rem;
+  box-shadow: var(--sh-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.admin-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.admin-panel__title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--navy);
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.admin-field--inline {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.admin-field__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.admin-row {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.admin-input {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.55rem 0.75rem;
+  border: 2px solid var(--border);
+  border-radius: var(--r-md);
+  outline: none;
+  background: var(--surface);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  width: 100%;
+}
+
+.admin-input:focus {
+  border-color: var(--turquoise);
+  box-shadow: 0 0 0 3px rgba(22, 184, 200, 0.16);
+}
+
+.admin-input--area {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.admin-input--json {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+.admin-btn {
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 2px solid transparent;
+  border-radius: var(--r-md);
+  padding: 0.6rem 1.1rem;
+  transition: transform 0.12s ease, opacity 0.12s ease, background 0.12s ease;
+}
+
+.admin-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.admin-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.admin-btn--primary {
+  background: var(--grad-primary);
+  color: #fff;
+  box-shadow: var(--sh-teal);
+  align-self: flex-start;
+}
+
+.admin-btn--primary .pa-spinner {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.admin-btn--approve {
+  background: var(--correct-bg);
+  color: var(--correct);
+}
+
+.admin-btn--delete {
+  background: var(--wrong-bg);
+  color: var(--wrong);
+}
+
+.admin-btn--ghost {
+  background: var(--surface);
+  color: var(--ink-soft);
+  border-color: var(--border);
+}
+
+.admin-error {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--wrong);
+  background: var(--wrong-bg);
+  border-radius: var(--r-sm);
+  padding: 0.55rem 0.8rem;
+}
+
+.admin-empty {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.92rem;
+}
+
+/* Draft cards */
+.admin-card {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--r-md);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  background: #fcfdfe;
+}
+
+.admin-card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.admin-card__id {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+.admin-card__actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.admin-json-toggle {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--teal);
+  padding: 0;
+  text-align: left;
+}
