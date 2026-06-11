@@ -1,11 +1,18 @@
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from sqlalchemy import func
 
-from auth import AuthError, verify_request
+from admin import (
+    ALLOWED_DIFFICULTY,
+    ALLOWED_SKILL_TYPES,
+    AdminGenError,
+    generate_items,
+)
+from auth import AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
 from models import Item, Lesson, UserLessonCompletion, UserProgress
 from pronunciation import PronunciationError, assess_pronunciation
@@ -315,6 +322,219 @@ def complete_lesson(lesson_id):
         session.rollback()
         logger.exception("Completing lesson failed")
         return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+# --- Admin: item generation & curation --------------------------------------
+
+# Source `type` <-> editorial `skill_type` for stored items.
+_SKILL_TYPE_FROM_TYPE = {"dialogue": "roleplay", "translation": "speaking"}
+
+
+def serialize_admin_item(item):
+    return {
+        "item_id": item.item_id,
+        "lesson_id": item.lesson_id,
+        "type": item.type,
+        "level": item.level,
+        "difficulty": item.difficulty,
+        "status": item.status,
+        "skill_type": item.skill_type,
+        "order_index": item.order_index,
+        "data": item.data,
+    }
+
+
+def store_generated_item(session, raw, fallback_difficulty, order_index):
+    """Persist one generated item dict as a draft Item and return it."""
+    data = dict(raw)
+    data.pop("audio_url", None)
+
+    item_type = data.get("type") or data.get("skill_type") or "vocabulary"
+    skill_type = data.get("skill_type") or _SKILL_TYPE_FROM_TYPE.get(item_type, item_type)
+    if skill_type not in ALLOWED_SKILL_TYPES:
+        skill_type = _SKILL_TYPE_FROM_TYPE.get(item_type, "vocabulary")
+
+    difficulty = (data.get("difficulty") or data.get("level") or fallback_difficulty)
+    if difficulty not in ALLOWED_DIFFICULTY:
+        difficulty = fallback_difficulty
+    level = data.get("level") if data.get("level") in ALLOWED_DIFFICULTY else difficulty
+
+    item_id = f"draft_{uuid.uuid4().hex[:12]}"
+    data["id"] = item_id
+
+    row = Item(
+        item_id=item_id,
+        lesson_id=None,  # drafts aren't attached to a lesson yet
+        type=item_type,
+        level=level,
+        difficulty=difficulty,
+        skill_type=skill_type,
+        status="draft",
+        order_index=order_index,
+        data=data,
+    )
+    session.add(row)
+    return row
+
+
+@app.route("/api/admin/generate-items", methods=["POST"])
+def admin_generate_items():
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        generated = generate_items(
+            topic=payload.get("topic", ""),
+            role=payload.get("role", ""),
+            source_text=payload.get("source_text", ""),
+            num_items=payload.get("num_items", 5),
+            difficulty=payload.get("difficulty", "B1"),
+        )
+    except AdminGenError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    fallback_difficulty = str(payload.get("difficulty", "B1")).strip().upper()
+    if fallback_difficulty not in ALLOWED_DIFFICULTY:
+        fallback_difficulty = "B1"
+
+    session = SessionLocal()
+    try:
+        base = (
+            session.query(func.coalesce(func.max(Item.order_index), -1))
+            .filter(Item.lesson_id.is_(None))
+            .scalar()
+        )
+        stored = []
+        for offset, raw in enumerate(generated, start=1):
+            stored.append(
+                store_generated_item(session, raw, fallback_difficulty, base + offset)
+            )
+        session.commit()
+        return jsonify({"items": [serialize_admin_item(i) for i in stored]})
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Storing generated items failed")
+        return jsonify({"error": "Internal error storing generated items."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/items", methods=["GET"])
+def admin_list_items():
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    status = request.args.get("status", "draft")
+    session = SessionLocal()
+    try:
+        query = session.query(Item)
+        if status:
+            query = query.filter(Item.status == status)
+        items = query.order_by(Item.id.desc()).all()
+        return jsonify({"items": [serialize_admin_item(i) for i in items]})
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/items/<item_id>/approve", methods=["POST"])
+def admin_approve_item(item_id):
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        item = session.query(Item).filter_by(item_id=item_id).one_or_none()
+        if item is None:
+            return jsonify({"error": f"Item '{item_id}' not found."}), 404
+        item.status = "approved"
+        session.commit()
+        return jsonify(serialize_admin_item(item))
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/items/<item_id>", methods=["POST"])
+def admin_edit_item(item_id):
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    payload = request.get_json(silent=True) or {}
+    session = SessionLocal()
+    try:
+        item = session.query(Item).filter_by(item_id=item_id).one_or_none()
+        if item is None:
+            return jsonify({"error": f"Item '{item_id}' not found."}), 404
+
+        if "difficulty" in payload:
+            if payload["difficulty"] not in ALLOWED_DIFFICULTY:
+                return jsonify({"error": "Invalid difficulty."}), 400
+            item.difficulty = payload["difficulty"]
+        if "status" in payload:
+            if payload["status"] not in ("draft", "approved"):
+                return jsonify({"error": "Invalid status."}), 400
+            item.status = payload["status"]
+        if "skill_type" in payload:
+            if payload["skill_type"] not in ALLOWED_SKILL_TYPES:
+                return jsonify({"error": "Invalid skill_type."}), 400
+            item.skill_type = payload["skill_type"]
+        if "type" in payload:
+            item.type = payload["type"]
+        if "level" in payload:
+            item.level = payload["level"]
+        if "order_index" in payload:
+            item.order_index = payload["order_index"]
+        if "data" in payload:
+            if not isinstance(payload["data"], dict):
+                return jsonify({"error": "data must be an object."}), 400
+            item.data = payload["data"]
+        if "lesson_id" in payload:
+            target = (
+                session.query(Lesson)
+                .filter_by(lesson_id=payload["lesson_id"])
+                .one_or_none()
+            )
+            if target is None:
+                return jsonify({"error": "Target lesson_id not found."}), 400
+            item.lesson_id = payload["lesson_id"]
+
+        session.commit()
+        return jsonify(serialize_admin_item(item))
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Editing item failed")
+        return jsonify({"error": "Internal error editing item."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/items/<item_id>", methods=["DELETE"])
+def admin_delete_item(item_id):
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        item = session.query(Item).filter_by(item_id=item_id).one_or_none()
+        if item is None:
+            return jsonify({"error": f"Item '{item_id}' not found."}), 404
+        if item.status != "draft":
+            return jsonify({"error": "Only draft items can be deleted."}), 409
+        session.delete(item)
+        session.commit()
+        return jsonify({"deleted": item_id})
     finally:
         session.close()
 

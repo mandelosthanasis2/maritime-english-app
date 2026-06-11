@@ -54,10 +54,12 @@ class Item(Base):
     __tablename__ = "items"
 
     id = Column(Integer, primary_key=True)
+    # Nullable so admin-generated draft items can exist before being assigned to
+    # a lesson; real lesson items always set this.
     lesson_id = Column(
         String,
         ForeignKey("lessons.lesson_id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     item_id = Column(String, unique=True, nullable=False, index=True)

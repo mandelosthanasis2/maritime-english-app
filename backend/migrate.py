@@ -58,7 +58,11 @@ def run():
         raise RuntimeError("DATABASE_URL is not set; cannot run the migration.")
 
     insp = inspect(engine)
-    existing = _columns(insp, "items")
+    columns = insp.get_columns("items")
+    existing = {c["name"] for c in columns}
+    lesson_id_not_null = any(
+        c["name"] == "lesson_id" and c.get("nullable") is False for c in columns
+    )
 
     with engine.begin() as conn:
         if "difficulty" not in existing:
@@ -92,6 +96,20 @@ def run():
         # Backfill only rows that don't have a skill_type yet (preserves curation).
         result = conn.execute(text(SKILL_TYPE_BACKFILL_SQL))
         logger.info("Backfilled skill_type for %s row(s).", result.rowcount)
+
+        # Allow draft items with no lesson: relax items.lesson_id NOT NULL.
+        if lesson_id_not_null:
+            if engine.dialect.name == "postgresql":
+                conn.execute(text("ALTER TABLE items ALTER COLUMN lesson_id DROP NOT NULL"))
+                logger.info("Relaxed items.lesson_id to NULLABLE.")
+            else:
+                logger.info(
+                    "items.lesson_id is NOT NULL but dialect=%s cannot ALTER it "
+                    "in place — skipping (fresh DBs already create it nullable).",
+                    engine.dialect.name,
+                )
+        else:
+            logger.info("items.lesson_id already nullable — skipping.")
 
     logger.info("Migration complete.")
 
