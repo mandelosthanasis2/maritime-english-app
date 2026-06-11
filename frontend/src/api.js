@@ -98,23 +98,54 @@ export async function completeLesson(lessonId) {
 
 // --- Admin (requires the ADMIN_EMAIL account) -------------------------------
 
+// Turn a non-OK response into a clear Greek error (distinguishes timeout /
+// gateway / server / generic), carrying res.status for callers (e.g. the gate).
+async function adminResponseError(res) {
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    return new Error(
+      `Ο server δεν απάντησε εγκαίρως (${res.status}) — πιθανό timeout λόγω μεγάλου PDF/πολλών σελίδων. Δοκίμασε μικρότερο εύρος σελίδων.`,
+    )
+  }
+  let message = ''
+  try {
+    const data = await res.json()
+    if (data && data.error) message = data.error
+  } catch {
+    // body wasn't JSON
+  }
+  if (!message) {
+    message =
+      res.status >= 500
+        ? `Εσωτερικό σφάλμα server (${res.status}).`
+        : `Το αίτημα απέτυχε (${res.status}).`
+  }
+  return new Error(message)
+}
+
+// A failed fetch() (rejected promise) means the response never arrived: a
+// dropped connection, CORS-masked 502 after a worker timeout, or the backend
+// being unreachable.
+function adminNetworkError() {
+  return new Error(
+    'Αποτυχία σύνδεσης με τον server. Πιθανό timeout (μεγάλο PDF/πολλές σελίδες) ή το backend δεν είναι διαθέσιμο. Δοκίμασε μικρότερο εύρος σελίδων ή ξανά σε λίγο.',
+  )
+}
+
 async function adminRequest(path, { method = 'GET', body } = {}) {
   const headers = await authHeaders()
   if (body !== undefined) headers['Content-Type'] = 'application/json'
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
+  let res
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+  } catch {
+    throw adminNetworkError() // network/timeout — no status available
+  }
   if (!res.ok) {
-    let message = `Request failed (${res.status})`
-    try {
-      const data = await res.json()
-      if (data && data.error) message = data.error
-    } catch {
-      // keep generic
-    }
-    const err = new Error(message)
+    const err = await adminResponseError(res)
     err.status = res.status
     throw err
   }
@@ -135,20 +166,18 @@ export async function adminGenerateItems({ sourceText, kind, pageRange, pdfFile 
   form.append('kind', kind || 'auto')
   if (pageRange) form.append('page_range', pageRange)
 
-  const res = await fetch(`${API_BASE_URL}/api/admin/generate-items`, {
-    method: 'POST',
-    headers,
-    body: form,
-  })
+  let res
+  try {
+    res = await fetch(`${API_BASE_URL}/api/admin/generate-items`, {
+      method: 'POST',
+      headers,
+      body: form,
+    })
+  } catch {
+    throw adminNetworkError()
+  }
   if (!res.ok) {
-    let message = `Request failed (${res.status})`
-    try {
-      const data = await res.json()
-      if (data && data.error) message = data.error
-    } catch {
-      // keep generic
-    }
-    const err = new Error(message)
+    const err = await adminResponseError(res)
     err.status = res.status
     throw err
   }
