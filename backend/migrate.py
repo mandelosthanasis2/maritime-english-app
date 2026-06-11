@@ -53,18 +53,31 @@ def _columns(insp, table):
     return {col["name"] for col in insp.get_columns(table)}
 
 
+# A fixed key for the Postgres advisory lock that serialises concurrent runs
+# (e.g. several gunicorn workers applying the migration on startup at once).
+_ADVISORY_LOCK_KEY = 91237001
+
+
 def run():
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set; cannot run the migration.")
 
-    insp = inspect(engine)
-    columns = insp.get_columns("items")
-    existing = {c["name"] for c in columns}
-    lesson_id_not_null = any(
-        c["name"] == "lesson_id" and c.get("nullable") is False for c in columns
-    )
-
     with engine.begin() as conn:
+        is_postgres = engine.dialect.name == "postgresql"
+        if is_postgres:
+            # Transaction-scoped lock: only one worker runs the body at a time;
+            # it's released automatically on commit/rollback.
+            conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _ADVISORY_LOCK_KEY})
+
+        # Inspect AFTER acquiring the lock, on this connection, so we see any
+        # changes a concurrent run already committed (and skip them).
+        insp = inspect(conn)
+        columns = insp.get_columns("items")
+        existing = {c["name"] for c in columns}
+        lesson_id_not_null = any(
+            c["name"] == "lesson_id" and c.get("nullable") is False for c in columns
+        )
+
         if "difficulty" not in existing:
             conn.execute(
                 text("ALTER TABLE items ADD COLUMN difficulty VARCHAR NOT NULL DEFAULT 'B1'")
@@ -99,7 +112,7 @@ def run():
 
         # Allow draft items with no lesson: relax items.lesson_id NOT NULL.
         if lesson_id_not_null:
-            if engine.dialect.name == "postgresql":
+            if is_postgres:
                 conn.execute(text("ALTER TABLE items ALTER COLUMN lesson_id DROP NOT NULL"))
                 logger.info("Relaxed items.lesson_id to NULLABLE.")
             else:

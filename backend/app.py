@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from admin import (
     ALLOWED_DIFFICULTY,
@@ -41,6 +42,16 @@ try:
     logger.info("Database tables initialized.")
 except Exception as exc:  # pragma: no cover - startup best effort
     logger.warning("Could not initialize database on startup: %s", exc)
+
+# Apply schema migrations on startup (idempotent, concurrency-safe). This adds
+# the editorial columns and relaxes items.lesson_id to NULLABLE so generated
+# drafts can be stored. Guarded so a migration hiccup never takes down the app.
+try:
+    from migrate import run as run_migrations
+
+    run_migrations()
+except Exception as exc:  # pragma: no cover - startup best effort
+    logger.warning("Could not apply migrations on startup: %s", exc)
 
 
 # --- Serialization helpers ---------------------------------------------------
@@ -427,10 +438,30 @@ def admin_generate_items():
             )
         session.commit()
         return jsonify({"items": [serialize_admin_item(i) for i in stored]})
-    except Exception:  # pragma: no cover - unexpected failure
+    except IntegrityError as exc:
+        session.rollback()
+        logger.exception("Storing generated items failed (integrity error)")
+        detail = str(getattr(exc, "orig", exc))
+        if "lesson_id" in detail and "null" in detail.lower():
+            message = (
+                "Η αποθήκευση απέτυχε: η βάση έχει ακόμη NOT NULL στο items.lesson_id, "
+                "οπότε δεν επιτρέπει drafts χωρίς μάθημα. Τρέξε το migration στο Railway "
+                "(python migrate.py) και ξαναδοκίμασε."
+            )
+        else:
+            message = f"Η αποθήκευση απέτυχε λόγω περιορισμού της βάσης: {detail[:300]}"
+        return jsonify({"error": message}), 500
+    except SQLAlchemyError as exc:
+        session.rollback()
+        logger.exception("Storing generated items failed (database error)")
+        detail = str(getattr(exc, "orig", exc))[:300]
+        return jsonify({"error": f"Σφάλμα βάσης κατά την αποθήκευση: {detail}"}), 500
+    except Exception as exc:  # pragma: no cover - unexpected failure
         session.rollback()
         logger.exception("Storing generated items failed")
-        return jsonify({"error": "Internal error storing generated items."}), 500
+        return jsonify(
+            {"error": f"Εσωτερικό σφάλμα κατά την αποθήκευση των items: {exc}"}
+        ), 500
     finally:
         session.close()
 
