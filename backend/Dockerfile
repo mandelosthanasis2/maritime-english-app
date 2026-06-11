@@ -23,4 +23,7 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Mirrors the Procfile web command.
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-8080}"]
+# Mirrors the Procfile web command. Long --timeout because admin item
+# generation runs several sequential Claude calls; multiple workers/threads so a
+# long request never blocks health checks or other requests.
+CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --workers 2 --threads 4 --timeout 600 --graceful-timeout 30"]

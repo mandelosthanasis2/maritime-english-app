@@ -374,6 +374,11 @@ export default function Admin() {
             '✨ Δημιούργησε μαθήματα'
           )}
         </button>
+        {generating && (
+          <p className="admin-hint">
+            Μπορεί να πάρει 1–2 λεπτά για μεγάλα PDF — μην κλείσεις τη σελίδα.
+          </p>
+        )}
       </section>
 
       {error && <p className="admin-error">{error}</p>}
