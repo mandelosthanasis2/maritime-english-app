@@ -1,4 +1,5 @@
 import { Link, Route, Routes } from 'react-router-dom'
+import Admin from './pages/Admin.jsx'
 import Home from './pages/Home.jsx'
 import Lesson from './pages/Lesson.jsx'
 import Login from './pages/Login.jsx'
@@ -68,6 +69,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/lessons/:lessonId" element={<Lesson />} />
+          <Route path="/admin" element={<Admin />} />
         </Routes>
       </main>
     </div>
