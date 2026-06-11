@@ -59,6 +59,9 @@ def serialize_item(item):
         "item_id": item.item_id,
         "type": item.type,
         "level": item.level,
+        "difficulty": item.difficulty,
+        "status": item.status,
+        "skill_type": item.skill_type,
         "data": item.data,
     }
 

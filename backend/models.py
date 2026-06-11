@@ -64,6 +64,13 @@ class Item(Base):
     type = Column(String)
     level = Column(String)
     order_index = Column(Integer)
+    # Editorial metadata (curated separately from the source JSON):
+    #   difficulty  CEFR band: A1 | A2 | B1 | B2 | C1   (default B1)
+    #   status      draft | approved                     (default approved)
+    #   skill_type  vocabulary | listening | fill_gap | word_order | speaking | roleplay
+    difficulty = Column(String, nullable=False, server_default="B1")
+    status = Column(String, nullable=False, server_default="approved")
+    skill_type = Column(String)
     # The full original item object (english, explanations, pronunciation_focus,
     # tags, ...) stored exactly as it appears in the source JSON.
     data = Column(JSONType, nullable=False)
