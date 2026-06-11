@@ -150,3 +150,26 @@ def verify_request(request):
 
     logger.info("auth success: alg=%s, user verified", alg)
     return user_id, payload.get("email")
+
+
+def verify_admin(request):
+    """Verify the token AND that the caller is the configured admin.
+
+    Returns (user_id, email). Raises AuthError(403) for non-admins, AuthError(503)
+    if ADMIN_EMAIL isn't configured.
+
+    Required env var: ADMIN_EMAIL — the email address allowed to use the admin
+    endpoints (matched case-insensitively against the verified token's email).
+    """
+    user_id, email = verify_request(request)
+
+    admin_email = os.environ.get("ADMIN_EMAIL")
+    if not admin_email:
+        logger.error("ADMIN_EMAIL is not set; admin endpoints are unavailable.")
+        raise AuthError("Admin access is not configured on the server.", 503)
+
+    if not email or email.strip().lower() != admin_email.strip().lower():
+        logger.warning("admin access denied for email=%s", email)
+        raise AuthError("Forbidden: admin access required.", 403)
+
+    return user_id, email
