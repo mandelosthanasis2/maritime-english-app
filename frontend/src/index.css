@@ -2125,3 +2125,29 @@ h3 {
   padding: 0;
   text-align: left;
 }
+
+/* Track badges + file input on admin */
+.badge--track {
+  color: #fff;
+}
+
+.badge--track-grammar {
+  background: var(--accent);
+}
+
+.badge--track-maritime {
+  background: var(--teal);
+}
+
+.admin-input--file {
+  padding: 0.45rem;
+  font-size: 0.85rem;
+  background: #f6f9fa;
+}
+
+.admin-file-name {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--teal);
+  font-weight: 600;
+}

@@ -9,9 +9,14 @@ import {
   fetchLessons,
 } from '../api.js'
 
-const ROLES = ['Engine', 'Deck', 'Cargo', 'Safety']
 const DIFFICULTIES = ['A1', 'A2', 'B1', 'B2', 'C1']
 const SKILL_TYPES = ['vocabulary', 'listening', 'fill_gap', 'word_order', 'speaking', 'roleplay']
+const KINDS = [
+  { value: 'auto', label: 'Αυτόματο' },
+  { value: 'grammar', label: 'Γραμματική' },
+  { value: 'maritime', label: 'Maritime' },
+]
+const TRACK_LABEL = { grammar: 'Γραμματική', maritime: 'Maritime' }
 
 // One draft card with inline-editable fields. Common fields get dedicated
 // inputs; the full item JSON is editable in a collapsible textarea so every
@@ -20,13 +25,18 @@ function DraftCard({ item, lessons, onApproved, onDeleted, onError }) {
   const data = item.data || {}
   const english = data.english || {}
   const el = (data.explanations && data.explanations.el) || {}
+  const track = item.track || data.track || null
+
+  // Offer lessons whose track matches the item; fall back to all if none match.
+  const trackLessons = track ? lessons.filter((l) => l.track === track) : []
+  const lessonOptions = trackLessons.length ? trackLessons : lessons
 
   const [text, setText] = useState(english.text ?? english.scenario ?? '')
   const [translation, setTranslation] = useState(el.translation ?? '')
   const [note, setNote] = useState(el.note ?? '')
   const [difficulty, setDifficulty] = useState(item.difficulty || 'B1')
   const [skillType, setSkillType] = useState(item.skill_type || 'vocabulary')
-  const [lessonId, setLessonId] = useState(lessons[0]?.lesson_id || '')
+  const [lessonId, setLessonId] = useState(lessonOptions[0]?.lesson_id || '')
   const [showJson, setShowJson] = useState(false)
   const [jsonText, setJsonText] = useState(JSON.stringify(data, null, 2))
   const [busy, setBusy] = useState(null) // null | 'save' | 'approve' | 'delete'
@@ -100,6 +110,11 @@ function DraftCard({ item, lessons, onApproved, onDeleted, onError }) {
   return (
     <article className="admin-card">
       <div className="admin-card__head">
+        {track && (
+          <span className={`badge badge--track badge--track-${track}`}>
+            {TRACK_LABEL[track] || track}
+          </span>
+        )}
         <span className="badge badge--type">{item.type}</span>
         <span className="admin-card__id">{item.item_id}</span>
       </div>
@@ -169,8 +184,10 @@ function DraftCard({ item, lessons, onApproved, onDeleted, onError }) {
             value={lessonId}
             onChange={(e) => setLessonId(e.target.value)}
           >
-            {lessons.map((l) => (
-              <option key={l.lesson_id} value={l.lesson_id}>{l.title}</option>
+            {lessonOptions.map((l) => (
+              <option key={l.lesson_id} value={l.lesson_id}>
+                {l.title} ({l.track})
+              </option>
             ))}
           </select>
         </label>
@@ -217,10 +234,9 @@ export default function Admin() {
   const [error, setError] = useState(null)
 
   // Generation form state.
-  const [topic, setTopic] = useState('')
-  const [role, setRole] = useState(ROLES[0])
-  const [difficulty, setDifficulty] = useState('B1')
-  const [numItems, setNumItems] = useState(5)
+  const [kind, setKind] = useState('auto')
+  const [pageRange, setPageRange] = useState('')
+  const [pdfFile, setPdfFile] = useState(null)
   const [sourceText, setSourceText] = useState('')
   const [generating, setGenerating] = useState(false)
 
@@ -249,17 +265,18 @@ export default function Admin() {
     }
   }, [navigate])
 
+  const hasSource = Boolean(pdfFile) || sourceText.trim().length > 0
+
   async function generate() {
-    if (!topic.trim() || generating) return
+    if (!hasSource || generating) return
     setError(null)
     setGenerating(true)
     try {
       const res = await adminGenerateItems({
-        topic: topic.trim(),
-        role,
         sourceText,
-        numItems: Number(numItems) || 5,
-        difficulty,
+        kind,
+        pageRange,
+        pdfFile,
       })
       setDrafts((prev) => [...(res.items || []), ...prev])
     } catch (err) {
@@ -296,60 +313,50 @@ export default function Admin() {
       <h1 className="admin__title">Διαχείριση περιεχομένου</h1>
 
       <section className="admin-panel">
-        <h2 className="admin-panel__title">Παραγωγή νέων items</h2>
-
-        <label className="admin-field">
-          <span className="admin-field__label">Θέμα</span>
-          <input
-            className="admin-input"
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            placeholder="π.χ. Fire safety procedures in the engine room"
-          />
-        </label>
+        <h2 className="admin-panel__title">Δημιουργία μαθημάτων</h2>
 
         <div className="admin-row">
           <label className="admin-field admin-field--inline">
-            <span className="admin-field__label">Ρόλος</span>
-            <select className="admin-input" value={role} onChange={(e) => setRole(e.target.value)}>
-              {ROLES.map((r) => (
-                <option key={r} value={r}>{r}</option>
+            <span className="admin-field__label">Είδος υλικού</span>
+            <select className="admin-input" value={kind} onChange={(e) => setKind(e.target.value)}>
+              {KINDS.map((k) => (
+                <option key={k.value} value={k.value}>{k.label}</option>
               ))}
             </select>
           </label>
 
           <label className="admin-field admin-field--inline">
-            <span className="admin-field__label">Difficulty</span>
-            <select className="admin-input" value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
-              {DIFFICULTIES.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="admin-field admin-field--inline">
-            <span className="admin-field__label">Πλήθος</span>
+            <span className="admin-field__label">Σελίδες PDF (προαιρετικό)</span>
             <input
               className="admin-input"
-              type="number"
-              min={1}
-              max={20}
-              value={numItems}
-              onChange={(e) => setNumItems(e.target.value)}
+              value={pageRange}
+              onChange={(e) => setPageRange(e.target.value)}
+              placeholder="π.χ. 5-48 (κενό = όλο)"
             />
           </label>
         </div>
 
         <label className="admin-field">
+          <span className="admin-field__label">PDF (προαιρετικό)</span>
+          <input
+            className="admin-input admin-input--file"
+            type="file"
+            accept="application/pdf,.pdf"
+            onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+          />
+          {pdfFile && <span className="admin-file-name">📄 {pdfFile.name}</span>}
+        </label>
+
+        <label className="admin-field">
           <span className="admin-field__label">
-            Απόσπασμα βιβλίου (προαιρετικό — δομική αναφορά, όχι αντιγραφή)
+            ή επικόλλησε κείμενο (δομική αναφορά, όχι αντιγραφή)
           </span>
           <textarea
             className="admin-input admin-input--area"
             rows={5}
             value={sourceText}
             onChange={(e) => setSourceText(e.target.value)}
-            placeholder="Επικόλλησε εδώ το απόσπασμα…"
+            placeholder="Επικόλλησε εδώ απόσπασμα από βιβλίο/ασκήσεις…"
           />
         </label>
 
@@ -357,14 +364,14 @@ export default function Admin() {
           type="button"
           className="admin-btn admin-btn--primary"
           onClick={generate}
-          disabled={generating || !topic.trim()}
+          disabled={generating || !hasSource}
         >
           {generating ? (
             <>
-              <span className="pa-spinner" aria-hidden="true" /> Παραγωγή…
+              <span className="pa-spinner" aria-hidden="true" /> Δημιουργία…
             </>
           ) : (
-            '✨ Παραγωγή'
+            '✨ Δημιούργησε μαθήματα'
           )}
         </button>
       </section>
