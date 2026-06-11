@@ -40,6 +40,18 @@ LESSON_FIELDS = (
     "version",
 )
 
+# Map source `type` onto the editorial skill_type vocabulary.
+SKILL_TYPE_MAP = {"dialogue": "roleplay", "translation": "speaking"}
+
+
+def skill_type_for(item):
+    """Resolve skill_type from an explicit override or the item's type."""
+    explicit = item.get("skill_type")
+    if explicit:
+        return explicit
+    item_type = item.get("type")
+    return SKILL_TYPE_MAP.get(item_type, item_type)
+
 
 def seed(path=None):
     path = path or os.environ.get("LESSON_FILE", DEFAULT_CONTENT_PATH)
@@ -77,6 +89,11 @@ def seed(path=None):
                 row = Item(item_id=item_id)
                 session.add(row)
                 created += 1
+                # Editorial fields are set only on insert so curated values are
+                # never overwritten when re-seeding content.
+                row.difficulty = item.get("difficulty", "B1")
+                row.status = item.get("status", "approved")
+                row.skill_type = skill_type_for(item)
             else:
                 updated += 1
 
