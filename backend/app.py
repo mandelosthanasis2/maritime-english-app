@@ -10,6 +10,7 @@ from admin import (
     ALLOWED_DIFFICULTY,
     ALLOWED_SKILL_TYPES,
     AdminGenError,
+    extract_text_from_pdf,
     generate_items,
 )
 from auth import AuthError, verify_admin, verify_request
@@ -333,6 +334,7 @@ _SKILL_TYPE_FROM_TYPE = {"dialogue": "roleplay", "translation": "speaking"}
 
 
 def serialize_admin_item(item):
+    data = item.data or {}
     return {
         "item_id": item.item_id,
         "lesson_id": item.lesson_id,
@@ -341,8 +343,10 @@ def serialize_admin_item(item):
         "difficulty": item.difficulty,
         "status": item.status,
         "skill_type": item.skill_type,
+        # track lives inside the JSON data for drafts (lessons own the real track).
+        "track": data.get("track"),
         "order_index": item.order_index,
-        "data": item.data,
+        "data": data,
     }
 
 
@@ -386,21 +390,28 @@ def admin_generate_items():
     except AuthError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
-    payload = request.get_json(silent=True) or {}
+    # Accept multipart (PDF + fields) or a JSON body.
+    js = request.get_json(silent=True) or {}
+
+    def field(name, default=""):
+        return request.form.get(name) or js.get(name) or default
+
+    kind = field("kind", "auto")
+    page_range = field("page_range", "")
+    source_text = field("source_text", "")
+    pdf_file = request.files.get("pdf")
+
     try:
-        generated = generate_items(
-            topic=payload.get("topic", ""),
-            role=payload.get("role", ""),
-            source_text=payload.get("source_text", ""),
-            num_items=payload.get("num_items", 5),
-            difficulty=payload.get("difficulty", "B1"),
-        )
+        if pdf_file is not None:
+            pdf_text = extract_text_from_pdf(pdf_file.read(), page_range)
+            source_text = (
+                f"{pdf_text}\n\n{source_text}".strip() if source_text.strip() else pdf_text
+            )
+        generated = generate_items(source_text=source_text, kind=kind)
     except AdminGenError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
-    fallback_difficulty = str(payload.get("difficulty", "B1")).strip().upper()
-    if fallback_difficulty not in ALLOWED_DIFFICULTY:
-        fallback_difficulty = "B1"
+    fallback_difficulty = "B1"
 
     session = SessionLocal()
     try:

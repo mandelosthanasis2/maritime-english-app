@@ -125,17 +125,34 @@ export function adminListItems(status = 'draft') {
   return adminRequest(`/api/admin/items?status=${encodeURIComponent(status)}`)
 }
 
-export function adminGenerateItems({ topic, role, sourceText, numItems, difficulty }) {
-  return adminRequest('/api/admin/generate-items', {
+export async function adminGenerateItems({ sourceText, kind, pageRange, pdfFile }) {
+  // Multipart so a PDF can be uploaded alongside the text fields. Don't set
+  // Content-Type — the browser adds the multipart boundary.
+  const headers = await authHeaders()
+  const form = new FormData()
+  if (pdfFile) form.append('pdf', pdfFile)
+  if (sourceText) form.append('source_text', sourceText)
+  form.append('kind', kind || 'auto')
+  if (pageRange) form.append('page_range', pageRange)
+
+  const res = await fetch(`${API_BASE_URL}/api/admin/generate-items`, {
     method: 'POST',
-    body: {
-      topic,
-      role,
-      source_text: sourceText,
-      num_items: numItems,
-      difficulty,
-    },
+    headers,
+    body: form,
   })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const data = await res.json()
+      if (data && data.error) message = data.error
+    } catch {
+      // keep generic
+    }
+    const err = new Error(message)
+    err.status = res.status
+    throw err
+  }
+  return res.json()
 }
 
 export function adminEditItem(itemId, changes) {

@@ -6,3 +6,4 @@ psycopg2-binary
 azure-cognitiveservices-speech
 anthropic
 pyjwt[crypto]
+pypdf
