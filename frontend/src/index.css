@@ -2668,3 +2668,27 @@ h3 {
   font-size: 0.85rem;
   color: var(--ink-soft);
 }
+
+/* ============================================================
+   Admin feedback: approval success + per-lesson inline error
+   ============================================================ */
+.admin-notice {
+  margin: 0 0 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--correct);
+  background: var(--correct-bg);
+  border-radius: var(--r-sm);
+  padding: 0.6rem 0.8rem;
+}
+
+/* Shown ON the lesson card, next to the action that failed. */
+.admin-lesson__error {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--wrong);
+  background: var(--wrong-bg);
+  border-radius: var(--r-sm);
+  padding: 0.5rem 0.7rem;
+}

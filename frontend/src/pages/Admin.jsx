@@ -184,18 +184,21 @@ function ItemEditor({ item, moveTargets, onError, onChange }) {
 }
 
 // A suggested lesson with editable header and its items below.
-function LessonGroup({ group, moveTargets, onError, reload }) {
+function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
   const [title, setTitle] = useState(group.title || '')
   const [titleEl, setTitleEl] = useState(group.title_el || '')
   const [description, setDescription] = useState(group.description || '')
   const [track, setTrack] = useState(group.track || 'maritime')
   const [busy, setBusy] = useState(null)
+  const [note, setNote] = useState(null) // inline error shown ON this card
 
   async function saveHeader() {
     setBusy('save')
+    setNote(null)
     try {
       await adminEditLesson(group.lesson_id, { title, title_el: titleEl, description, track })
     } catch (err) {
+      setNote(err.message)
       onError(err.message)
     } finally {
       setBusy(null)
@@ -204,12 +207,19 @@ function LessonGroup({ group, moveTargets, onError, reload }) {
 
   async function approve() {
     setBusy('approve')
+    setNote(null)
     try {
-      await adminEditLesson(group.lesson_id, { title, title_el: titleEl, description, track })
+      // EXISTING lessons: approve directly. Their header is not editable here,
+      // and round-tripping it would send legacy tracks (e.g. "engine") into
+      // the track validator — the silent 400 that used to swallow approvals.
+      if (!group.existing) {
+        await adminEditLesson(group.lesson_id, { title, title_el: titleEl, description, track })
+      }
       await adminApproveLesson(group.lesson_id)
+      onNotice(`✓ Το μάθημα «${group.title}» εγκρίθηκε — τα drafts του είναι πλέον live.`)
       reload()
     } catch (err) {
-      onError(err.message)
+      setNote(`Η έγκριση απέτυχε: ${err.message}`)
       setBusy(null)
     }
   }
@@ -264,6 +274,8 @@ function LessonGroup({ group, moveTargets, onError, reload }) {
           </select>
         </div>
       )}
+
+      {note && <p className="admin-lesson__error">{note}</p>}
 
       <div className="admin-lesson__actions">
         {!group.existing && (
@@ -376,6 +388,7 @@ export default function Admin() {
   const [groups, setGroups] = useState([])
   const [approvedLessons, setApprovedLessons] = useState([])
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null) // green success line (e.g. approvals)
 
   const [kind, setKind] = useState('auto')
   const [pageRange, setPageRange] = useState('')
@@ -422,6 +435,7 @@ export default function Admin() {
   async function generate() {
     if (!hasSource || generating) return
     setError(null)
+    setNotice(null)
     setGenerating(true)
     try {
       await adminGenerateItems({ sourceText, kind, pageRange, pdfFile })
@@ -509,6 +523,7 @@ export default function Admin() {
 
       <section className="admin-panel">
         <h2 className="admin-panel__title">Προτεινόμενα μαθήματα ({groups.length})</h2>
+        {notice && <p className="admin-notice">{notice}</p>}
         {groups.length === 0 ? (
           <p className="admin-empty">Δεν υπάρχουν drafts. Δημιούργησε μαθήματα παραπάνω.</p>
         ) : (
@@ -518,6 +533,7 @@ export default function Admin() {
               group={group}
               moveTargets={moveTargets}
               onError={setError}
+              onNotice={setNotice}
               reload={() => load()}
             />
           ))
