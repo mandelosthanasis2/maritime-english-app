@@ -8,6 +8,7 @@ schema does not need to change as lesson content evolves.
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -110,3 +111,28 @@ class UserLessonCompletion(Base):
     completed_at = Column(DateTime(timezone=True), server_default=func.now())
     times_completed = Column(Integer, nullable=False, default=1)
     xp_earned = Column(Integer, nullable=False, default=0)  # cumulative from this lesson
+
+
+class UserItemStat(Base):
+    """One row per (user, item): the user's answer history for that item.
+
+    Feeds the adaptive engine (adaptive.py). track/skill_type/difficulty are
+    denormalized from the item's lesson at write time so per-track / per-skill /
+    per-difficulty success rates can be aggregated without joins, and so the
+    history survives later item edits. Per-attempt detail isn't kept — counts
+    plus the most recent outcome are enough for the current selection logic.
+    """
+
+    __tablename__ = "user_item_stats"
+    __table_args__ = (UniqueConstraint("user_id", "item_id", name="uq_user_item_stat"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    item_id = Column(String, nullable=False, index=True)
+    track = Column(String)  # grammar | maritime
+    skill_type = Column(String)
+    difficulty = Column(String)  # CEFR band A1..C1
+    correct_count = Column(Integer, nullable=False, default=0)
+    wrong_count = Column(Integer, nullable=False, default=0)
+    last_correct = Column(Boolean)  # outcome of the most recent attempt
+    last_answered_at = Column(DateTime(timezone=True))  # for spaced repetition
