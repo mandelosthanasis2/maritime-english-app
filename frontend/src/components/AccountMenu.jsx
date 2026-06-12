@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext.jsx'
 
 export default function AccountMenu() {
   const { user, signOut } = useAuth()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
 
   if (!user) return null
@@ -24,6 +26,16 @@ export default function AccountMenu() {
           <div className="account-backdrop" onClick={() => setOpen(false)} />
           <div className="account-menu" role="menu">
             <p className="account-menu__email">{user.email}</p>
+            <button
+              type="button"
+              className="account-menu__item"
+              onClick={() => {
+                setOpen(false)
+                navigate('/placement')
+              }}
+            >
+              Επανάληψη placement test
+            </button>
             <button
               type="button"
               className="account-logout"

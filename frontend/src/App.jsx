@@ -1,10 +1,13 @@
+import { useEffect, useState } from 'react'
 import { Link, Route, Routes } from 'react-router-dom'
 import Admin from './pages/Admin.jsx'
 import Home from './pages/Home.jsx'
 import Lesson from './pages/Lesson.jsx'
 import Login from './pages/Login.jsx'
+import Placement from './pages/Placement.jsx'
 import AccountMenu from './components/AccountMenu.jsx'
 import { useAuth } from './auth/AuthContext.jsx'
+import { fetchMyProgress } from './api.js'
 
 function AnchorLogo() {
   return (
@@ -28,6 +31,28 @@ function AnchorLogo() {
 
 function App() {
   const { user, loading, configured } = useAuth()
+
+  // Onboarding gate: a signed-in user with no cefr_level (placement not taken)
+  // sees the placement test before the home screen. 'checking' while the
+  // progress loads; a failed check never blocks the app.
+  const [placement, setPlacement] = useState('checking') // checking | needed | ready
+  useEffect(() => {
+    if (!user) {
+      setPlacement('checking')
+      return undefined
+    }
+    let active = true
+    fetchMyProgress()
+      .then((p) => {
+        if (active) setPlacement(p.cefr_level ? 'ready' : 'needed')
+      })
+      .catch(() => {
+        if (active) setPlacement('ready')
+      })
+    return () => {
+      active = false
+    }
+  }, [user])
 
   // Supabase env vars missing — fail gracefully with a clear message.
   if (!configured) {
@@ -59,6 +84,32 @@ function App() {
     return <Login />
   }
 
+  if (placement === 'checking') {
+    return (
+      <div className="auth">
+        <div className="splash">
+          <span className="pa-spinner" aria-hidden="true" />
+          <p>Φόρτωση…</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Placement not taken yet — show the test before anything else.
+  if (placement === 'needed') {
+    return (
+      <div className="app">
+        <header className="app-header">
+          <AnchorLogo />
+          <AccountMenu />
+        </header>
+        <main className="app-main">
+          <Placement gated onDone={() => setPlacement('ready')} />
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -69,6 +120,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/lessons/:lessonId" element={<Lesson />} />
+          <Route path="/placement" element={<Placement />} />
           <Route path="/admin" element={<Admin />} />
         </Routes>
       </main>

@@ -2229,3 +2229,108 @@ h3 {
   display: flex;
   gap: 0.5rem;
 }
+
+/* ============================================================
+   Placement test
+   ============================================================ */
+/* Neutral "this is my answer" state — the test gives no correct/wrong
+   feedback while playing; grading happens server-side on submit. */
+.option--selected {
+  background: var(--teal-soft);
+  border-color: var(--turquoise);
+  color: var(--navy);
+  font-weight: 700;
+}
+
+.placement__emoji {
+  font-size: 3rem;
+  margin-bottom: 0.6rem;
+}
+
+/* Discreet skip link under the start button (onboarding / error screens). */
+.placement__skip {
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  margin-top: 1rem;
+  color: var(--ink-faint);
+  text-decoration: underline;
+  transition: color 0.12s ease;
+}
+
+.placement__skip:hover {
+  color: var(--ink-soft);
+}
+
+/* Invisible spacer keeping the progress bar aligned when there is no ✕. */
+.player__close--spacer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Result screen */
+.placement-result {
+  width: 100%;
+  max-width: 24rem;
+  margin: 1.2rem auto 0.4rem;
+  padding: 1.1rem 1.3rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-sm);
+  text-align: left;
+}
+
+.placement-result__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.placement-result__row + .placement-result__row,
+.placement-result__note + .placement-result__row {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--border);
+}
+
+.placement-result__label {
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.placement-result__value {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--navy);
+}
+
+.placement-result__note {
+  margin: 0.35rem 0 0;
+  font-size: 0.88rem;
+  color: var(--ink-faint);
+}
+
+/* Account menu: discreet secondary action above logout. */
+.account-menu__item {
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  background: none;
+  color: var(--navy);
+  border: none;
+  border-radius: var(--r-sm);
+  padding: 0.55rem 0.8rem;
+  margin-bottom: 0.4rem;
+  transition: background 0.12s ease;
+}
+
+.account-menu__item:hover {
+  background: var(--teal-soft);
+}
