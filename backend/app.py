@@ -15,7 +15,7 @@ from admin import (
     extract_text_from_pdf,
     generate_lessons,
 )
-from adaptive import choose_next
+from adaptive import choose_next, choose_next_lesson
 from auth import AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
 from models import Item, Lesson, UserItemStat, UserLessonCompletion, UserProgress
@@ -633,6 +633,52 @@ def next_exercise():
     except Exception:  # pragma: no cover - unexpected failure
         session.rollback()
         logger.exception("Choosing next exercise failed")
+        return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/next-lesson", methods=["GET"])
+def next_lesson():
+    """The adaptive engine's pick for the user's next WHOLE lesson, with a
+    Greek explanation of why (see choose_next_lesson in adaptive.py)."""
+    try:
+        user_id, email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        progress = get_or_create_progress(session, user_id, email)
+        session.commit()
+
+        # Approved lessons with their approved items, grouped per lesson.
+        lessons = session.query(Lesson).filter_by(status="approved").all()
+        items_by_lesson = {}
+        for item, _track in _approved_items_with_track(session):
+            items_by_lesson.setdefault(item.lesson_id, []).append(item)
+        lesson_pool = [(l, items_by_lesson.get(l.lesson_id, [])) for l in lessons]
+
+        stats = session.query(UserItemStat).filter_by(user_id=user_id).all()
+        completions = (
+            session.query(UserLessonCompletion).filter_by(user_id=user_id).all()
+        )
+
+        choice = choose_next_lesson(progress, lesson_pool, stats, completions)
+        if choice is None:  # empty pool, or everything finished very recently
+            return jsonify(
+                {"lesson": None, "message": "Δεν υπάρχουν νέα μαθήματα ακόμα."}
+            )
+
+        lesson, reason_el, meta = choice
+        payload = serialize_lesson_meta(
+            lesson, len(items_by_lesson.get(lesson.lesson_id, []))
+        )
+        payload["title_el"] = lesson.title_el
+        return jsonify({"lesson": payload, "reason_el": reason_el, "meta": meta})
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Choosing next lesson failed")
         return jsonify({"error": "Internal error."}), 500
     finally:
         session.close()
