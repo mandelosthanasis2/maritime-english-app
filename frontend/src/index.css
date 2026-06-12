@@ -3025,3 +3025,171 @@ textarea {
 .role-card {
   min-height: var(--tap-cta);
 }
+
+/* ============================================================
+   Home hierarchy (UI/UX step 3) — one clear primary action
+   ============================================================ */
+.home {
+  gap: var(--sp-4);
+}
+
+/* One-line greeting; the recommendation card below is the hero. */
+.home-greeting {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0 0;
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: var(--fs-lg);
+  color: var(--navy);
+}
+
+/* The recommendation card, promoted to hero CTA. */
+.next-card {
+  position: relative;
+  overflow: hidden;
+  margin-top: 0;
+  padding: var(--sp-5) var(--sp-4) var(--sp-6);
+  border-radius: var(--r-xl);
+  animation: card-rise var(--t-page) both;
+}
+
+@keyframes card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.next-card__body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.next-card__title {
+  font-size: var(--fs-title);
+}
+
+.next-card__waves {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 26px;
+  color: rgba(255, 255, 255, 0.09);
+  pointer-events: none;
+}
+
+/* Thumb-friendly: full-width CTA on phones (auto on larger screens). */
+.next-card__start {
+  width: 100%;
+  text-align: center;
+}
+
+/* Stats: one compact strip instead of three crowded cards. */
+.stats-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  box-shadow: var(--sh-sm);
+  padding: 0.6rem var(--sp-4);
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+.stats-strip__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+
+.stats-strip__item b {
+  font-family: var(--font-head);
+  font-size: 1rem;
+  color: var(--navy);
+}
+
+/* Lesson group sections: clear titles, generous separation. */
+.home-section {
+  margin-top: var(--sp-4);
+  gap: var(--sp-3);
+}
+
+.home-section__title {
+  font-size: var(--fs-lg);
+}
+
+.home-section__title::after {
+  content: '';
+  display: block;
+  width: 2.4rem;
+  height: 3px;
+  margin-top: 0.4rem;
+  border-radius: 2px;
+  background: var(--grad-progress);
+}
+
+/* Coming soon: a quiet teaser row, not a content block. */
+.home-soon {
+  margin-top: var(--sp-5);
+  padding-bottom: var(--sp-4);
+}
+
+.home-soon__title {
+  margin: 0 0 var(--sp-2);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.soon-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.soon-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--ink-faint);
+  border: 1.5px dashed var(--border);
+  border-radius: var(--r-pill);
+  padding: 0.4rem 0.85rem;
+}
+
+/* Larger screens: let the layout breathe — the base above is the
+   375px experience. */
+@media (min-width: 640px) {
+  .lesson-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-4);
+  }
+
+  .next-card__start {
+    width: auto;
+    text-align: left;
+  }
+
+  .next-card {
+    padding: var(--sp-6) var(--sp-5) calc(var(--sp-6) + 8px);
+  }
+}
