@@ -15,9 +15,10 @@ from admin import (
     extract_text_from_pdf,
     generate_lessons,
 )
+from adaptive import choose_next
 from auth import AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
-from models import Item, Lesson, UserLessonCompletion, UserProgress
+from models import Item, Lesson, UserItemStat, UserLessonCompletion, UserProgress
 from placement import (
     grade_answer,
     score_grammar,
@@ -486,6 +487,131 @@ def placement_submit():
     except Exception:  # pragma: no cover - unexpected failure
         session.rollback()
         logger.exception("Placement submit failed")
+        return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+# --- Adaptive engine ----------------------------------------------------------
+
+
+def serialize_item_stat(stat):
+    total = stat.correct_count + stat.wrong_count
+    return {
+        "item_id": stat.item_id,
+        "track": stat.track,
+        "skill_type": stat.skill_type,
+        "difficulty": stat.difficulty,
+        "correct_count": stat.correct_count,
+        "wrong_count": stat.wrong_count,
+        "success_rate": round(stat.correct_count / total, 3) if total else None,
+        "last_correct": stat.last_correct,
+        "last_answered_at": stat.last_answered_at.isoformat()
+        if stat.last_answered_at
+        else None,
+    }
+
+
+@app.route("/api/lessons/<lesson_id>/answer", methods=["POST"])
+def record_answer(lesson_id):
+    """Record one answered item; feeds the user's adaptive performance stats.
+
+    Body: {"item_id": "...", "correct": true|false}
+    """
+    try:
+        user_id, _email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    payload = request.get_json(silent=True) or {}
+    item_id = payload.get("item_id")
+    correct = payload.get("correct")
+    if not item_id or not isinstance(item_id, str):
+        return jsonify({"error": "Body must include 'item_id'."}), 400
+    if not isinstance(correct, bool):
+        return jsonify({"error": "'correct' must be true or false."}), 400
+
+    session = SessionLocal()
+    try:
+        row = (
+            session.query(Item, Lesson.track)
+            .join(Lesson, Item.lesson_id == Lesson.lesson_id)
+            .filter(Item.item_id == item_id, Item.lesson_id == lesson_id)
+            .one_or_none()
+        )
+        if row is None:
+            return (
+                jsonify({"error": f"Item '{item_id}' not found in lesson '{lesson_id}'."}),
+                404,
+            )
+        item, lesson_track = row
+
+        stat = (
+            session.query(UserItemStat)
+            .filter_by(user_id=user_id, item_id=item_id)
+            .one_or_none()
+        )
+        if stat is None:
+            stat = UserItemStat(
+                user_id=user_id, item_id=item_id, correct_count=0, wrong_count=0
+            )
+            session.add(stat)
+        # Refresh the denormalized fields on every answer so they track edits.
+        stat.track = section_for_track(lesson_track)
+        stat.skill_type = item.skill_type or item.type
+        stat.difficulty = item.difficulty
+        if correct:
+            stat.correct_count += 1
+        else:
+            stat.wrong_count += 1
+        stat.last_correct = correct
+        stat.last_answered_at = datetime.now(timezone.utc)
+
+        session.commit()
+        return jsonify(serialize_item_stat(stat))
+    except IntegrityError:
+        # Two concurrent first-answers raced on the unique (user, item) row;
+        # this attempt loses but the answer was equivalent — report gracefully.
+        session.rollback()
+        logger.warning("Concurrent answer insert for user=%s item=%s", user_id, item_id)
+        return jsonify({"error": "Concurrent update, please retry."}), 409
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Recording answer failed")
+        return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/next-exercise", methods=["GET"])
+def next_exercise():
+    """The adaptive engine's pick for this user's next item (see adaptive.py)."""
+    try:
+        user_id, email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        progress = get_or_create_progress(session, user_id, email)
+        session.commit()
+
+        rows = _approved_items_with_track(session)
+        stats = session.query(UserItemStat).filter_by(user_id=user_id).all()
+
+        choice = choose_next(progress, rows, stats)
+        if choice is None:  # empty pool — friendly response, not an error
+            return jsonify(
+                {"item": None, "message": "Δεν υπάρχουν διαθέσιμες ασκήσεις ακόμη."}
+            )
+
+        item, track, meta = choice
+        payload = serialize_item(item)
+        payload["lesson_id"] = item.lesson_id
+        return jsonify({"item": payload, "track": track, "meta": meta})
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Choosing next exercise failed")
         return jsonify({"error": "Internal error."}), 500
     finally:
         session.close()
