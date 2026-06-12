@@ -5,6 +5,7 @@ import Home from './pages/Home.jsx'
 import Lesson from './pages/Lesson.jsx'
 import Login from './pages/Login.jsx'
 import Placement from './pages/Placement.jsx'
+import Practice from './pages/Practice.jsx'
 import AccountMenu from './components/AccountMenu.jsx'
 import { useAuth } from './auth/AuthContext.jsx'
 import { fetchMyProgress } from './api.js'
@@ -121,6 +122,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/lessons/:lessonId" element={<Lesson />} />
           <Route path="/placement" element={<Placement />} />
+          <Route path="/practice" element={<Practice />} />
           <Route path="/admin" element={<Admin />} />
         </Routes>
       </main>
