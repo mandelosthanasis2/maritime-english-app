@@ -6,6 +6,9 @@ Adds three columns with safe defaults, without touching existing data:
   - status      (draft | approved)             — default 'approved'
   - skill_type  (vocabulary | listening | fill_gap | word_order | speaking | roleplay)
 
+Also adds the placement-test columns to `user_progress` (cefr_level,
+maritime_level), both nullable — NULL means "placement not taken yet".
+
 `create_all` (used on startup) does NOT add columns to an existing table, so we
 run explicit ALTERs here. Safe to run repeatedly: columns are only added when
 missing, and `skill_type` is only backfilled where it is still NULL (so any
@@ -124,6 +127,22 @@ def run():
             logger.info("Added lessons.title_el.")
         else:
             logger.info("lessons.title_el already exists — skipping.")
+
+        # User progress: placement results (NULL until the user takes the
+        # placement test). The table may not exist yet on a fresh database, in
+        # which case create_all builds it with the new columns already present.
+        if insp.has_table("user_progress"):
+            progress_columns = {c["name"] for c in insp.get_columns("user_progress")}
+            for column in ("cefr_level", "maritime_level"):
+                if column not in progress_columns:
+                    conn.execute(
+                        text(f"ALTER TABLE user_progress ADD COLUMN {column} VARCHAR")
+                    )
+                    logger.info("Added user_progress.%s.", column)
+                else:
+                    logger.info("user_progress.%s already exists — skipping.", column)
+        else:
+            logger.info("user_progress table not present yet — skipping (create_all adds it).")
 
         # Allow draft items with no lesson: relax items.lesson_id NOT NULL.
         if lesson_id_not_null:

@@ -93,6 +93,9 @@ class UserProgress(Base):
     total_xp = Column(Integer, nullable=False, default=0)
     current_streak = Column(Integer, nullable=False, default=0)
     last_active_date = Column(Date)
+    # Placement test results; NULL until the user takes the placement.
+    cefr_level = Column(String)  # A1 | A2 | B1 | B2 | C1
+    maritime_level = Column(String)  # none | basic | proficient
 
 
 class UserLessonCompletion(Base):
