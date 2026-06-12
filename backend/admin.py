@@ -23,6 +23,7 @@ MODEL = "claude-opus-4-8"
 
 ALLOWED_DIFFICULTY = {"A1", "A2", "B1", "B2", "C1"}
 ALLOWED_SKILL_TYPES = {
+    "teaching",
     "vocabulary",
     "listening",
     "fill_gap",
@@ -47,6 +48,12 @@ DECIDING THE TRACK
 - If told the kind is "maritime" or "grammar", use that for every lesson.
 - If told "auto", decide per lesson: nautical/shipboard content -> "maritime"; general English grammar/usage -> "grammar".
 
+TEACHING FIRST (concept cards)
+- Every NEW lesson MUST START with 1-2 "teaching" items — the concept explanation a teacher would give BEFORE the exercises. They must be the FIRST entries of the lesson's "items" array; all exercises come after them.
+- A teaching item is reading material, not an exercise: it has NO answer. Its explanations.el.note is the actual mini-lesson the learner reads — a DETAILED Greek explanation of the concept: what it is, when and how it is used, written simply for a Greek learner. Include 2-3 examples in explanations.el.examples (each an English sentence with its Greek translation).
+- Track-aware content: for "grammar" lessons the teaching item explains the grammar rule; for "maritime" lessons it explains the terminology/procedure and how it is used on board.
+- When you reuse an EXISTING lesson title (merging items into it), do NOT add teaching items unless the passage introduces a clearly different concept.
+
 AVOIDING DUPLICATE LESSONS
 - You will be given a list of EXISTING LESSON TITLES. If the content you are creating fits one of them, reuse that EXACT title in "lesson_title_en" (so it is merged, not duplicated). Only invent a new title when none fits.
 
@@ -61,18 +68,19 @@ OUTPUT: a JSON array of LESSON objects:
 
 Each ITEM object:
 {
-  "type": "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "dialogue" | "translation",
+  "type": "teaching" | "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "dialogue" | "translation",
   "level": CEFR band "A1|A2|B1|B2|C1",
   "difficulty": same CEFR band,
-  "skill_type": "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "roleplay",
+  "skill_type": "teaching" | "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "roleplay",
   "ship_types": array of strings (use ["all"] for general grammar),
   "english": { ... shape depends on skill_type, see below ... },
-  "explanations": { "el": { "translation": "<Greek>", "note": "<Greek note, see rules>", "prompt": "<optional Greek prompt for translation items>" } },
+  "explanations": { "el": { "translation": "<Greek>", "note": "<Greek note, see rules>", "prompt": "<optional Greek prompt for translation items>", "examples": [<teaching items only, see below>] } },
   "pronunciation_focus": array of short strings (may be empty),
   "tags": array of short lowercase strings
 }
 
 english shape by skill_type:
+- teaching: { "text": "<short English title of the concept>" }. The lesson body lives in explanations.el: "translation" = short Greek title, "note" = the detailed Greek explanation (the mini-lesson the learner reads), "examples" = [{"en": "<English example>", "el": "<Greek translation>"}, ...] with 2-3 entries.
 - vocabulary / speaking / listening: { "text": "<English>", "phonetic": "<IPA>" }
 - fill_gap: { "text": "<full English sentence>", "gap_text": "<same sentence with ___ for the blank>", "answer": "<missing word>", "options": ["<answer>", "<distractor>", "<distractor>", "<distractor>"] }
 - word_order: { "text": "<full correct English sentence>", "scrambled": ["<word/chunk>", ...] }  (chunks must reconstruct text exactly; multi-word chunks allowed)
@@ -86,7 +94,7 @@ CRITICAL RULES
 - Use the source ONLY as a structural/topical reference — write original wording, never copy long sentences verbatim.
 - explanations.el text (translation/note/prompt) must be in Greek.
 - Do NOT invent an "audio_url" or "id" field; omit them.
-- Map skill_type to type: roleplay -> type "dialogue"; translation -> type "translation" (skill_type "speaking"); otherwise type matches skill_type.
+- Map skill_type to type: roleplay -> type "dialogue"; translation -> type "translation" (skill_type "speaking"); otherwise type matches skill_type (teaching -> type "teaching").
 - Output ONLY a valid JSON array of lesson objects. No markdown, no code fences, no prose."""
 
 
@@ -266,9 +274,10 @@ def _chunk_user_prompt(chunk, kind, known_titles):
         f"{kind_line}\n\n"
         f"{titles_block}"
         "Group the practice items you create from the passage below into one or more "
-        "lessons. If the passage already contains exercises with answers, convert "
-        "those. Grammar items must include a clear Greek rule explanation in "
-        "explanations.el.note.\n\n"
+        "lessons. Every NEW lesson must START with 1-2 Greek 'teaching' concept items "
+        "(detailed Greek explanation + 2-3 examples) BEFORE the exercises. If the "
+        "passage already contains exercises with answers, convert those. Grammar items "
+        "must include a clear Greek rule explanation in explanations.el.note.\n\n"
         f"<source_passage>\n{chunk}\n</source_passage>\n\n"
         "Return ONLY the JSON array of lesson objects."
     )
