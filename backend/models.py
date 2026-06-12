@@ -73,7 +73,8 @@ class Item(Base):
     # Editorial metadata (curated separately from the source JSON):
     #   difficulty  CEFR band: A1 | A2 | B1 | B2 | C1   (default B1)
     #   status      draft | approved                     (default approved)
-    #   skill_type  vocabulary | listening | fill_gap | word_order | speaking | roleplay
+    #   skill_type  teaching | vocabulary | listening | fill_gap | word_order | speaking | roleplay
+    #               ("teaching" = concept card read before the exercises; no answer)
     difficulty = Column(String, nullable=False, server_default="B1")
     status = Column(String, nullable=False, server_default="approved")
     skill_type = Column(String)

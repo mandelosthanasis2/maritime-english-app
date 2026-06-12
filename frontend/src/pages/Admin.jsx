@@ -12,7 +12,7 @@ import {
 } from '../api.js'
 
 const DIFFICULTIES = ['A1', 'A2', 'B1', 'B2', 'C1']
-const SKILL_TYPES = ['vocabulary', 'listening', 'fill_gap', 'word_order', 'speaking', 'roleplay']
+const SKILL_TYPES = ['teaching', 'vocabulary', 'listening', 'fill_gap', 'word_order', 'speaking', 'roleplay']
 const TRACKS = ['maritime', 'grammar']
 const TRACK_LABEL = { grammar: 'Γραμματική', maritime: 'Maritime' }
 const KINDS = [
@@ -35,6 +35,9 @@ function ItemEditor({ item, moveTargets, onError, onChange }) {
   const [showJson, setShowJson] = useState(false)
   const [jsonText, setJsonText] = useState(JSON.stringify(data, null, 2))
   const [busy, setBusy] = useState(null)
+
+  const isTeaching = (item.skill_type || item.type) === 'teaching'
+  const examples = Array.isArray(el.examples) ? el.examples : []
 
   function buildChanges() {
     let nextData
@@ -92,6 +95,7 @@ function ItemEditor({ item, moveTargets, onError, onChange }) {
   return (
     <div className="admin-item">
       <div className="admin-item__head">
+        {isTeaching && <span className="badge badge--teaching">ΔΙΔΑΣΚΑΛΙΑ</span>}
         <span className="badge badge--type">{item.type}</span>
         <span className="admin-card__id">{item.item_id}</span>
       </div>
@@ -101,20 +105,35 @@ function ItemEditor({ item, moveTargets, onError, onChange }) {
         rows={2}
         value={text}
         onChange={(e) => setText(e.target.value)}
+        placeholder={isTeaching ? 'Τίτλος concept (αγγλικά)' : undefined}
       />
       <input
         className="admin-input"
         value={translation}
         onChange={(e) => setTranslation(e.target.value)}
-        placeholder="Μετάφραση (ελληνικά)"
+        placeholder={isTeaching ? 'Τίτλος concept (ελληνικά)' : 'Μετάφραση (ελληνικά)'}
       />
       <textarea
         className="admin-input admin-input--area"
-        rows={2}
+        rows={isTeaching ? 6 : 2}
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        placeholder="Σημείωση / κανόνας (ελληνικά)"
+        placeholder={isTeaching ? 'Η εξήγηση του μαθήματος (ελληνικά)' : 'Σημείωση / κανόνας (ελληνικά)'}
       />
+
+      {isTeaching && examples.length > 0 && (
+        <ul className="admin-examples">
+          {examples.map((ex, i) => (
+            <li key={i} className="admin-examples__row">
+              <span className="admin-examples__en">{ex.en}</span>
+              <span className="admin-examples__el">{ex.el}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {isTeaching && examples.length === 0 && (
+        <p className="admin-hint">Χωρίς παραδείγματα — πρόσθεσε «examples» μέσω του JSON.</p>
+      )}
 
       <div className="admin-row">
         <select className="admin-input" value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>

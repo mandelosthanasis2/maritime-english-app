@@ -2413,3 +2413,43 @@ h3 {
   color: var(--ink-faint);
   text-align: center;
 }
+
+/* ============================================================
+   Teaching items (concept cards) in the admin review UI
+   ============================================================ */
+.badge--teaching {
+  background: #fdf3dc;
+  color: #8a6210;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* Read-only preview of a teaching item's examples (edited via the JSON view). */
+.admin-examples {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  background: #f7fbfc;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+}
+
+.admin-examples__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.admin-examples__en {
+  font-size: 0.92rem;
+  color: var(--navy);
+  font-weight: 600;
+}
+
+.admin-examples__el {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
