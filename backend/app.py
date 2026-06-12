@@ -1117,6 +1117,7 @@ def admin_approve_lesson(lesson_id):
     try:
         lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
         if lesson is None:
+            logger.warning("Approve failed: lesson %s not found", lesson_id)
             return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
 
         lesson.status = "approved"  # publish the lesson
@@ -1124,6 +1125,9 @@ def admin_approve_lesson(lesson_id):
         for item in items:
             item.status = "approved"
         session.commit()
+        logger.info(
+            "Approved lesson %s (%d draft item(s) published)", lesson_id, len(items)
+        )
 
         approved = session.query(Item).filter_by(lesson_id=lesson_id).order_by(Item.order_index).all()
         return jsonify(serialize_admin_lesson(lesson, approved))
@@ -1157,7 +1161,15 @@ def admin_edit_lesson(lesson_id):
             lesson.description = payload["description"]
         if "track" in payload:
             if payload["track"] not in ALLOWED_TRACKS:
-                return jsonify({"error": "Invalid track."}), 400
+                # Legacy lessons carry tracks like "engine"; a client that
+                # round-trips one here gets a clean 400 — log it so the
+                # rejection is visible in production logs.
+                logger.warning(
+                    "Edit lesson %s rejected: invalid track %r",
+                    lesson_id,
+                    payload["track"],
+                )
+                return jsonify({"error": f"Invalid track: '{payload['track']}'."}), 400
             lesson.track = payload["track"]
 
         session.commit()
