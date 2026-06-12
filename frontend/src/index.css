@@ -2627,3 +2627,44 @@ h3 {
 .next-card__alt:hover {
   opacity: 1;
 }
+
+/* ============================================================
+   Teaching backfill list (admin)
+   ============================================================ */
+.admin-teach-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.admin-teach-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.admin-teach-row__info {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-teach-row__title {
+  font-weight: 600;
+  color: var(--navy);
+}
+
+.admin-teach-row__note {
+  flex-basis: 100%;
+  order: 3;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}

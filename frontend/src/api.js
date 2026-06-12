@@ -247,6 +247,13 @@ export function adminDraftLessons() {
   return adminRequest('/api/admin/draft-lessons')
 }
 
+export function adminGenerateTeaching(lessonId) {
+  return adminRequest(
+    `/api/admin/lessons/${encodeURIComponent(lessonId)}/generate-teaching`,
+    { method: 'POST' },
+  )
+}
+
 export function adminApproveLesson(lessonId) {
   return adminRequest(`/api/admin/lessons/${encodeURIComponent(lessonId)}/approve`, {
     method: 'POST',
