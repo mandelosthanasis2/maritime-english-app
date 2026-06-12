@@ -96,6 +96,35 @@ export async function completeLesson(lessonId) {
   return res.json()
 }
 
+// --- Placement test ----------------------------------------------------------
+
+export function fetchPlacementQuestions() {
+  return getJSON('/api/placement/questions')
+}
+
+// answers: [{ item_id, answer }] where answer is a string (multiple choice)
+// or an array of chunks (word_order).
+export async function submitPlacement(answers) {
+  const headers = await authHeaders()
+  headers['Content-Type'] = 'application/json'
+  const res = await fetch(`${API_BASE_URL}/api/placement/submit`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ answers }),
+  })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // keep generic
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
 // --- Admin (requires the ADMIN_EMAIL account) -------------------------------
 
 // Turn a non-OK response into a clear Greek error (distinguishes timeout /
