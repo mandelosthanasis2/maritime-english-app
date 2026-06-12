@@ -79,6 +79,43 @@ function DisplayItem({ english, el }) {
   )
 }
 
+// Concept card ("teaching"): the explanation the learner READS before the
+// exercises. No answer, no correct/wrong — title, a detailed Greek note, and
+// the examples (English phrase + Greek translation, with playback).
+function TeachingCard({ english, el }) {
+  const { play, playingKey, loadingKey } = useTts()
+  const examples = Array.isArray(el.examples) ? el.examples : []
+  return (
+    <div className="teach">
+      <h2 className="teach__title">{english.text}</h2>
+      {el.translation && <p className="teach__subtitle">{el.translation}</p>}
+      {el.note && <p className="teach__body">{el.note}</p>}
+      {examples.length > 0 && (
+        <ul className="teach__examples">
+          {examples.map((example, index) => (
+            <li key={index} className="teach__example">
+              <span className="teach__example-en">
+                {example.en}
+                {example.en && (
+                  <button
+                    type="button"
+                    className="teach__listen"
+                    onClick={() => play(example.en, index)}
+                    aria-label="Άκου το παράδειγμα"
+                  >
+                    {loadingKey === index ? '⏳' : playingKey === index ? '🔈' : '🔊'}
+                  </button>
+                )}
+              </span>
+              <span className="teach__example-el">{example.el}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function FillGap({ english, el, onAnswered, onResult }) {
   const options = Array.isArray(english.options) ? english.options : []
   const [selected, setSelected] = useState(null)
@@ -329,6 +366,8 @@ export default function LessonItem({ item, onAnswered, onResult }) {
 
   function renderBody() {
     switch (item.type) {
+      case 'teaching':
+        return <TeachingCard english={english} el={el} />
       case 'fill_gap':
         return <FillGap english={english} el={el} onAnswered={onAnswered} onResult={onResult} />
       case 'word_order':
@@ -358,7 +397,11 @@ export default function LessonItem({ item, onAnswered, onResult }) {
   return (
     <div className="li">
       <div className="li-badges">
-        {item.type && <span className="badge badge--type">{item.type}</span>}
+        {item.type && (
+          <span className="badge badge--type">
+            {item.type === 'teaching' ? 'διδασκαλία' : item.type}
+          </span>
+        )}
         {item.level && <span className="badge badge--level">{item.level}</span>}
       </div>
       {renderBody()}
