@@ -114,6 +114,22 @@ export async function fetchNextExercise() {
   return res.json()
 }
 
+export async function fetchNextLesson() {
+  const headers = await authHeaders()
+  const res = await fetch(`${API_BASE_URL}/api/next-lesson`, { headers })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // keep generic
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
 export async function recordAnswer(lessonId, itemId, correct) {
   const headers = await authHeaders()
   headers['Content-Type'] = 'application/json'

@@ -235,3 +235,180 @@ def choose_next(progress, rows, stats, now=None, rng=None):
         "score": round(best_score, 3),
     }
     return best, track, meta
+
+
+# --- Lesson-level recommendation ----------------------------------------------
+#
+# `choose_next_lesson` applies the same philosophy one level up: instead of the
+# next ITEM, it picks the next whole LESSON and explains why in Greek. The
+# track choice and working level are shared with the item scorer; the lesson
+# score adds completion history (avoid what was just finished, resurface what
+# needs review) and how well the lesson's content matches the user's weak
+# skills. reason_el is built from plain templates — no API calls.
+
+# A lesson completed within this window is excluded outright (just finished);
+# one completed longer than the review window ago earns a small "review" bonus.
+LESSON_JUST_DONE_DAYS = 3
+LESSON_REVIEW_AFTER_DAYS = 7
+
+W_LESSON_LEVEL_EXACT = 3.0  # lesson difficulty == working level
+W_LESSON_LEVEL_NEAR = 1.5  # one band away
+W_LESSON_NEW = 2.0  # never completed
+W_LESSON_REVIEW = 1.5  # completed long ago — worth revisiting
+W_LESSON_MISTAKES = 2.5  # contains items the user last got WRONG
+W_LESSON_WEAKNESS = 2.0  # scaled by how weak its skill_types are
+
+SKILL_LABEL_EL = {
+    "vocabulary": "το λεξιλόγιο",
+    "listening": "την ακουστική κατανόηση",
+    "fill_gap": "τη συμπλήρωση κενών",
+    "word_order": "τη σύνταξη προτάσεων",
+    "speaking": "την προφορική έκφραση",
+    "roleplay": "τους διαλόγους",
+}
+TRACK_GOAL_EL = {
+    "grammar": "τη γραμματική σου",
+    "maritime": "τη ναυτική σου ορολογία",
+}
+
+
+def _lesson_level(items):
+    """A lesson's CEFR band = the rounded mean band of its items."""
+    average = sum(_level_index(item.difficulty) for item in items) / len(items)
+    return CEFR_LEVELS[round(average)]
+
+
+def _reason_el(code, track, lesson_level, weak_skill=None):
+    """Plain Greek templates explaining the pick — no API calls (rule: zero cost)."""
+    goal = TRACK_GOAL_EL.get(track, "τα Αγγλικά σου")
+    if code == "mistakes":
+        return "Περιέχει σημεία που σε δυσκόλεψαν — ώρα να τα ξαναδούμε και να τα δυναμώσουμε."
+    if code == "review":
+        return "Το ολοκλήρωσες πριν καιρό — μια επανάληψη θα σταθεροποιήσει όσα έμαθες."
+    if code == "weakness" and weak_skill in SKILL_LABEL_EL:
+        return (
+            f"Δουλεύει {SKILL_LABEL_EL[weak_skill]}, εκεί που χρειάζεσαι εξάσκηση — "
+            f"και είναι στο επίπεδό σου ({lesson_level})."
+        )
+    return f"Είναι στο επίπεδό σου ({lesson_level}) και θα δυναμώσει {goal}."
+
+
+def choose_next_lesson(progress, lessons, stats, completions, now=None, rng=None):
+    """Pick the next whole lesson for a user, with a Greek explanation.
+
+    progress     UserProgress (placement levels; may have nulls)
+    lessons      (Lesson, [approved Items]) pairs — the approved pool
+    stats        the user's UserItemStat rows
+    completions  the user's UserLessonCompletion rows
+
+    Returns (lesson, reason_el, meta) or None when nothing is suitable —
+    i.e. no approved lessons with items, or everything was completed within
+    the last LESSON_JUST_DONE_DAYS days.
+    """
+    now = now or datetime.now(timezone.utc)
+    rng = rng or random.Random()
+
+    last_completed = {}  # lesson_id -> most recent completion time
+    for completion in completions:
+        seen = last_completed.get(completion.lesson_id)
+        if seen is None or (completion.completed_at and completion.completed_at > seen):
+            last_completed[completion.lesson_id] = completion.completed_at
+
+    def days_since_completion(lesson_id):
+        age = _age(now, last_completed.get(lesson_id))
+        return None if age is None else age.days
+
+    # Candidates: approved lessons that still have items, not finished just now.
+    candidates = {"grammar": [], "maritime": []}
+    for lesson, items in lessons:
+        if not items:
+            continue
+        days = days_since_completion(lesson.lesson_id)
+        if days is not None and days < LESSON_JUST_DONE_DAYS:
+            continue  # just completed — never re-suggest immediately
+        candidates[section_for_track(lesson.track)].append((lesson, items))
+    available = {track for track, entries in candidates.items() if entries}
+    if not available:
+        return None
+
+    by_item, level_stats, skill_stats = _aggregate(stats)
+
+    track = pick_track(getattr(progress, "maritime_level", None), available, rng)
+    if track not in available:  # chosen mix has no lessons — fall back
+        track = next(iter(available))
+
+    target_level = working_level(base_level(progress, track), level_stats[track])
+    skill_rates = {
+        skill: correct / total
+        for skill, (correct, total) in skill_stats[track].items()
+        if total >= WEAKNESS_MIN_ATTEMPTS
+    }
+
+    best = None  # (score, lesson, factors)
+    for lesson, items in candidates[track]:
+        score = 0.0
+        factors = {"level": _lesson_level(items)}
+
+        # Level fit, like the item scorer but on the lesson's dominant band.
+        distance = abs(_level_index(factors["level"]) - _level_index(target_level))
+        if distance == 0:
+            score += W_LESSON_LEVEL_EXACT
+        elif distance == 1:
+            score += W_LESSON_LEVEL_NEAR
+
+        # Mistakes to revisit: items in this lesson the user last got wrong.
+        mistakes = sum(
+            1
+            for item in items
+            if by_item.get(item.item_id) is not None
+            and by_item[item.item_id].last_correct is False
+        )
+        if mistakes:
+            score += W_LESSON_MISTAKES
+            factors["mistakes"] = mistakes
+
+        # Completion history: prefer new lessons; old completions invite review.
+        days = days_since_completion(lesson.lesson_id)
+        if days is None:
+            score += W_LESSON_NEW
+            factors["new"] = True
+        elif days >= LESSON_REVIEW_AFTER_DAYS:
+            score += W_LESSON_REVIEW
+            factors["review"] = True
+
+        # Weakness: how much of the lesson exercises the user's weak skills.
+        weak = [
+            (skill_rates[item.skill_type], item.skill_type)
+            for item in items
+            if item.skill_type in skill_rates
+        ]
+        if weak:
+            worst_rate, worst_skill = min(weak)
+            score += W_LESSON_WEAKNESS * (1.0 - worst_rate)
+            if worst_rate < 0.7:
+                factors["weak_skill"] = worst_skill
+
+        score += rng.uniform(0, W_JITTER)
+        if best is None or score > best[0]:
+            best = (score, lesson, factors)
+
+    score, lesson, factors = best
+    # Reason priority mirrors what matters most pedagogically: fix mistakes,
+    # then refresh old material, then attack weaknesses, else level/track fit.
+    if factors.get("mistakes"):
+        code = "mistakes"
+    elif factors.get("review"):
+        code = "review"
+    elif factors.get("weak_skill"):
+        code = "weakness"
+    else:
+        code = "level"
+    reason_el = _reason_el(code, track, factors["level"], factors.get("weak_skill"))
+    meta = {
+        "track": track,
+        "target_level": target_level,
+        "lesson_level": factors["level"],
+        "reason_code": code,
+        "score": round(score, 3),
+    }
+    return lesson, reason_el, meta

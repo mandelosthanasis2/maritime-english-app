@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchLessons, fetchMyProgress } from '../api.js'
+import { fetchLessons, fetchMyProgress, fetchNextLesson } from '../api.js'
 
 // Metadata for rendering a small track badge on each lesson card.
 const TRACK_META = {
@@ -112,19 +112,72 @@ function ComingSoon() {
   )
 }
 
-// Prominent entry to the adaptive practice stream, shown above the lessons.
-function SmartPracticeCard() {
-  return (
-    <Link to="/practice" className="practice-card">
-      <span className="practice-card__icon" aria-hidden="true">✨</span>
-      <span className="practice-card__text">
-        <span className="practice-card__title">Έξυπνη εξάσκηση</span>
-        <span className="practice-card__subtitle">
-          Ασκήσεις προσαρμοσμένες στο επίπεδό σου — η εφαρμογή διαλέγει για σένα
+// The teacher's recommendation: the adaptive engine picks the user's next
+// whole lesson and explains why in Greek. Primary call-to-action on the home
+// screen; refetched on every mount, so finishing a lesson and returning home
+// surfaces the NEXT suggestion automatically.
+function NextLessonCard() {
+  const [state, setState] = useState('loading') // loading | ready | empty | error
+  const [data, setData] = useState(null)
+
+  useEffect(() => {
+    let active = true
+    fetchNextLesson()
+      .then((res) => {
+        if (!active) return
+        if (!res.lesson) {
+          setState('empty')
+        } else {
+          setData(res)
+          setState('ready')
+        }
+      })
+      .catch(() => {
+        if (active) setState('error')
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  if (state === 'loading') {
+    return (
+      <div className="next-card next-card--state">
+        <span className="pa-spinner" aria-hidden="true" />
+        <span>Επιλογή του επόμενου μαθήματος…</span>
+      </div>
+    )
+  }
+
+  if (state === 'empty' || state === 'error') {
+    return (
+      <div className="next-card next-card--state">
+        <span aria-hidden="true">🌊</span>
+        <span>
+          {state === 'empty'
+            ? 'Δεν υπάρχουν νέα μαθήματα ακόμα — ξαναδές κάποιο από τη λίστα.'
+            : 'Δεν ήταν δυνατή η φόρτωση της πρότασης — διάλεξε μάθημα από τη λίστα.'}
         </span>
-      </span>
-      <span className="practice-card__arrow" aria-hidden="true">→</span>
-    </Link>
+      </div>
+    )
+  }
+
+  const { lesson, reason_el: reason } = data
+  return (
+    <div className="next-card">
+      <p className="next-card__kicker">✨ Συνέχισε να μαθαίνεις</p>
+      <h2 className="next-card__title">{lesson.title_el || lesson.title}</h2>
+      {lesson.title_el && <p className="next-card__title-en">{lesson.title}</p>}
+      <p className="next-card__reason">Σου το προτείνω γιατί: {reason}</p>
+      <div className="next-card__actions">
+        <Link to={`/lessons/${lesson.lesson_id}`} className="next-card__start">
+          Ξεκίνα το μάθημα
+        </Link>
+        <Link to="/practice" className="next-card__alt">
+          ή κάνε ελεύθερη εξάσκηση →
+        </Link>
+      </div>
+    </div>
   )
 }
 
@@ -187,7 +240,7 @@ function Home() {
         loading={progressLoading}
       />
 
-      <SmartPracticeCard />
+      <NextLessonCard />
 
       <section className="home-section">
         <h2 className="home-section__title">Τα μαθήματά σου</h2>
