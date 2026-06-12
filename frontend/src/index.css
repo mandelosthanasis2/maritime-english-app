@@ -1,42 +1,52 @@
 /* ============================================================
    Maritime English — design system
+   "Deep Sea" dark theme: deep navy waters as the canvas, glassy
+   dark cards with thin luminous borders, neon teal as the primary
+   accent and coral as the warm secondary. Brand navy/gradients are
+   kept for headers and hero surfaces.
    ============================================================ */
 :root {
+  color-scheme: dark;
+
   /* Fonts */
   --font-head: 'Fredoka', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
     Arial, sans-serif;
 
-  /* Core maritime palette */
+  /* Core maritime palette (brand colors — still used on dark surfaces) */
   --navy: #0b2b40;
   --navy-2: #103a54;
-  --teal: #0e7c8b;
-  --teal-soft: #e1f2f3;
+  --teal: #2ec8d8; /* brightened for contrast as text/icon on dark */
+  --teal-soft: rgba(22, 184, 200, 0.14);
   --turquoise: #16b8c8;
 
   /* Warm accents */
   --accent: #ff7a59; /* coral */
   --accent-2: #ffb020; /* amber */
 
-  /* Semantic */
-  --correct: #15a05a;
-  --correct-bg: #e6f7ee;
-  --wrong: #e0533d;
-  --wrong-bg: #fdeceb;
-  --amber: #b9791f;
-  --amber-bg: #fff5dc;
-  --amber-border: #f0d391;
+  /* Semantic (text colors brightened, backgrounds become tints) */
+  --correct: #3ddc8f;
+  --correct-bg: rgba(34, 197, 122, 0.14);
+  --wrong: #ff8071;
+  --wrong-bg: rgba(224, 83, 61, 0.16);
+  --amber: #ffc15e;
+  --amber-bg: rgba(255, 176, 32, 0.12);
+  --amber-border: rgba(255, 176, 32, 0.35);
 
-  /* Neutrals */
-  --ink: #0d2330;
-  --ink-soft: #466071;
-  --ink-faint: #8499a4;
-  --border: #e2ebee;
-  --surface: #ffffff;
-  --bg: #eef4f6;
+  /* Neutrals — flipped for the dark sea */
+  --ink: #e8f2f8;
+  --ink-soft: #a7bdcc;
+  --ink-faint: #6e8799;
+  --border: rgba(141, 205, 222, 0.14);
+  --surface: #0e2538; /* card */
+  --surface-2: #14304a; /* raised card, inputs, inner wells */
+  --bg: #071622;
+
+  /* Strong/heading text on dark surfaces (was dark navy on light) */
+  --heading: #f2f9fd;
 
   /* Gradients */
-  --grad-header: linear-gradient(120deg, #0b2b40 0%, #0e5566 60%, #0e7c8b 100%);
+  --grad-header: linear-gradient(120deg, #081d2e 0%, #0e5566 60%, #0e7c8b 100%);
   --grad-primary: linear-gradient(135deg, #0e7c8b 0%, #16b8c8 100%);
   --grad-accent: linear-gradient(135deg, #ff7a59 0%, #ffb020 100%);
   --grad-progress: linear-gradient(90deg, #16b8c8 0%, #2fd6b0 100%);
@@ -48,11 +58,12 @@
   --r-xl: 24px;
   --r-pill: 999px;
 
-  /* Shadows */
-  --sh-sm: 0 1px 2px rgba(11, 43, 64, 0.06), 0 1px 3px rgba(11, 43, 64, 0.08);
-  --sh-md: 0 2px 6px rgba(11, 43, 64, 0.07), 0 8px 20px rgba(11, 43, 64, 0.08);
-  --sh-lg: 0 8px 28px rgba(11, 43, 64, 0.14);
-  --sh-teal: 0 6px 16px rgba(14, 124, 139, 0.32);
+  /* Shadows & glow — on dark water, depth comes from black + neon */
+  --sh-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.25);
+  --sh-md: 0 4px 10px rgba(0, 0, 0, 0.32), 0 10px 24px rgba(0, 0, 0, 0.28);
+  --sh-lg: 0 10px 32px rgba(0, 0, 0, 0.5);
+  --sh-teal: 0 6px 18px rgba(22, 184, 200, 0.35);
+  --glow-teal: 0 0 0 1px rgba(22, 184, 200, 0.28), 0 8px 30px rgba(22, 184, 200, 0.16);
   --shadow: var(--sh-md);
 
   /* Touch targets (mobile-first: thumbs, not cursors) */
@@ -236,7 +247,7 @@ h3 {
 .lesson-card__title {
   margin: 0.3rem 0 0.7rem;
   font-size: 1.2rem;
-  color: var(--navy);
+  color: var(--heading);
   line-height: 1.25;
 }
 
@@ -281,7 +292,7 @@ h3 {
 .lesson__title {
   margin: 0.3rem 0 0.6rem;
   font-size: 1.6rem;
-  color: var(--navy);
+  color: var(--heading);
   line-height: 1.2;
 }
 
@@ -341,7 +352,7 @@ h3 {
 .item-card__translation {
   margin: 0.7rem 0 0;
   font-size: 1.05rem;
-  color: var(--navy);
+  color: var(--heading);
   font-weight: 500;
 }
 
@@ -413,7 +424,7 @@ h3 {
   font-weight: 500;
   cursor: pointer;
   background: var(--surface);
-  color: var(--navy);
+  color: var(--heading);
   border: 2px solid var(--border);
   border-radius: var(--r-md);
   padding: 0.6rem 1.05rem;
@@ -503,7 +514,7 @@ h3 {
   font-weight: 500;
   cursor: pointer;
   background: var(--surface);
-  color: var(--navy);
+  color: var(--heading);
   border: 2px solid var(--border);
   border-radius: var(--r-pill);
   padding: 0.5rem 1rem;
@@ -737,7 +748,7 @@ h3 {
   font-family: var(--font-head);
   font-size: 1.2rem;
   font-weight: 600;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .pa-subscore__label {
@@ -788,7 +799,7 @@ h3 {
 .rp-scenario__el {
   margin: 0;
   font-size: 0.95rem;
-  color: var(--navy);
+  color: var(--heading);
   font-weight: 600;
 }
 
@@ -1316,7 +1327,7 @@ h3 {
 .player__done-title {
   margin: 0.5rem 0 0;
   font-size: 1.7rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .player__done-sub {
@@ -1507,7 +1518,7 @@ h3 {
   font-family: var(--font-head);
   font-size: 1.3rem;
   font-weight: 600;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .stat-card__label {
@@ -1525,7 +1536,7 @@ h3 {
 .home-section__title {
   margin: 0;
   font-size: 1.15rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 /* Richer lesson card internals */
@@ -1659,7 +1670,7 @@ h3 {
   font-family: var(--font-head);
   font-weight: 600;
   font-size: 1.35rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .auth-brand__name .app-wordmark__accent {
@@ -1794,7 +1805,7 @@ h3 {
 .auth-config__title {
   margin: 0 0 0.5rem;
   font-size: 1.3rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .auth-config__text {
@@ -1958,7 +1969,7 @@ h3 {
   font-family: var(--font-head);
   font-weight: 600;
   font-size: 1.1rem;
-  color: var(--navy);
+  color: var(--heading);
   background: #fff2e8;
   border-radius: var(--r-pill);
   padding: 0.35rem 1rem;
@@ -1981,7 +1992,7 @@ h3 {
 .admin__title {
   margin: 0;
   font-size: 1.5rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .admin-panel {
@@ -2006,7 +2017,7 @@ h3 {
 .admin-panel__title {
   margin: 0;
   font-size: 1.1rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .admin-field {
@@ -2232,7 +2243,7 @@ h3 {
 .admin-lesson__title {
   margin: 0;
   font-size: 1.15rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .admin-lesson__fields {
@@ -2284,7 +2295,7 @@ h3 {
 .option--selected {
   background: var(--teal-soft);
   border-color: var(--turquoise);
-  color: var(--navy);
+  color: var(--heading);
   font-weight: 700;
 }
 
@@ -2354,7 +2365,7 @@ h3 {
   font-family: var(--font-head);
   font-weight: 700;
   font-size: 1.25rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .placement-result__note {
@@ -2371,7 +2382,7 @@ h3 {
   width: 100%;
   text-align: left;
   background: none;
-  color: var(--navy);
+  color: var(--heading);
   border: none;
   border-radius: var(--r-sm);
   padding: 0.55rem 0.8rem;
@@ -2456,7 +2467,7 @@ h3 {
   font-family: var(--font-head);
   font-weight: 700;
   font-size: 0.95rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 /* Engine introspection line (?debug=1 only). */
@@ -2499,7 +2510,7 @@ h3 {
 
 .admin-examples__en {
   font-size: 0.92rem;
-  color: var(--navy);
+  color: var(--heading);
   font-weight: 600;
 }
 
@@ -2520,7 +2531,7 @@ h3 {
   font-family: var(--font-head);
   font-weight: 700;
   font-size: 1.45rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .teach__subtitle {
@@ -2564,7 +2575,7 @@ h3 {
   gap: 0.45rem;
   font-size: 1.02rem;
   font-weight: 600;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .teach__example-el {
@@ -2651,7 +2662,7 @@ h3 {
 .next-card__start {
   display: inline-block;
   background: #fff;
-  color: var(--navy);
+  color: #0b2b40; /* brand navy on the white CTA — must stay dark-on-light */
   font-family: var(--font-head);
   font-weight: 700;
   font-size: 1rem;
@@ -2716,7 +2727,7 @@ h3 {
 
 .admin-teach-row__title {
   font-weight: 600;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 .admin-teach-row__note {
@@ -2778,7 +2789,7 @@ h3 {
   font: inherit;
   font-size: 1.05rem;
   font-weight: 600;
-  color: var(--navy);
+  color: var(--heading);
   text-align: left;
   cursor: pointer;
   background: var(--surface);
@@ -3042,7 +3053,7 @@ textarea {
   font-family: var(--font-head);
   font-weight: 600;
   font-size: var(--fs-lg);
-  color: var(--navy);
+  color: var(--heading);
 }
 
 /* The recommendation card, promoted to hero CTA. */
@@ -3120,7 +3131,7 @@ textarea {
 .stats-strip__item b {
   font-family: var(--font-head);
   font-size: 1rem;
-  color: var(--navy);
+  color: var(--heading);
 }
 
 /* Lesson group sections: clear titles, generous separation. */
@@ -3192,4 +3203,148 @@ textarea {
   .next-card {
     padding: var(--sp-6) var(--sp-5) calc(var(--sp-6) + 8px);
   }
+}
+
+/* ============================================================
+   Deep Sea dark theme — overrides for hardcoded light colors
+   ------------------------------------------------------------
+   The token flip above handles everything var()-based; this block
+   sweeps the literal light backgrounds/borders that remained, plus
+   form controls (whose UA defaults are light).
+   ============================================================ */
+
+/* The sea: deep navy with faint teal light from above and below. */
+body {
+  background:
+    radial-gradient(1100px 520px at 50% -10%, rgba(22, 184, 200, 0.10) 0%, transparent 70%),
+    radial-gradient(900px 600px at 88% 112%, rgba(14, 124, 139, 0.12) 0%, transparent 60%),
+    var(--bg);
+}
+
+/* Form controls: UA defaults are light — pin them to the theme. */
+input,
+select,
+textarea {
+  background: var(--surface-2);
+  color: var(--ink);
+  caret-color: var(--turquoise);
+}
+
+::placeholder {
+  color: var(--ink-faint);
+  opacity: 1;
+}
+
+/* Cards & wells that hardcoded light fills. */
+.answer-row,
+.teach__example,
+.admin-examples {
+  background: var(--surface-2);
+}
+
+.badge--level {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-soft);
+}
+
+.badge--teaching {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
+.lesson-card--done {
+  border-color: rgba(61, 220, 143, 0.32);
+  background: linear-gradient(180deg, rgba(34, 197, 122, 0.10) 0%, var(--surface) 65%);
+}
+
+.lesson-card__progress {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.player__bar {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.player__continue:disabled,
+.player__start:disabled {
+  background: #28455c;
+  color: rgba(232, 242, 248, 0.45);
+}
+
+.player__footer {
+  background: linear-gradient(to top, var(--bg) 72%, rgba(7, 22, 34, 0));
+}
+
+.rp-scenario {
+  border-color: var(--border);
+}
+
+.pa-word--playing {
+  background: rgba(255, 176, 32, 0.28);
+}
+
+.reward__streak {
+  background: rgba(255, 122, 89, 0.16);
+}
+
+.auth-tabs {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.soon-card {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.admin-item {
+  background: var(--surface-2);
+}
+
+.admin-input--file {
+  background: var(--surface-2);
+}
+
+.admin-lesson--existing {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Hover tints that were light pastels. */
+@media (hover: hover) {
+  .lesson-card:hover {
+    border-color: rgba(22, 184, 200, 0.4);
+  }
+
+  .pa-record:hover {
+    background: rgba(22, 184, 200, 0.24);
+  }
+
+  .pa-word--tap:hover {
+    background: rgba(255, 176, 32, 0.24);
+  }
+
+  .player__close:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .help-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.07);
+  }
+}
+
+/* Neon edges: key cards pick up a faint luminous border, the
+   recommendation card gets the teal glow of the reference designs. */
+.next-card {
+  border: 1px solid rgba(22, 184, 200, 0.25);
+  box-shadow: var(--glow-teal);
+}
+
+.lesson-card,
+.role-card,
+.stats-strip,
+.placement-result {
+  border-color: var(--border);
+}
+
+.app-header {
+  box-shadow: 0 1px 0 rgba(22, 184, 200, 0.2), 0 2px 14px rgba(0, 0, 0, 0.45);
 }
