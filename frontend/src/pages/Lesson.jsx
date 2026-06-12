@@ -54,7 +54,14 @@ function Lesson() {
     )
   }
 
-  const items = lesson.items || []
+  // Teaching (concept) items always come first — the learner reads the
+  // explanation, then practises. Stable partition: relative order within each
+  // group is preserved, and lessons without teaching items are unaffected.
+  const rawItems = lesson.items || []
+  const items = [
+    ...rawItems.filter((i) => i.type === 'teaching'),
+    ...rawItems.filter((i) => i.type !== 'teaching'),
+  ]
   const total = items.length
 
   function goHome() {
@@ -204,7 +211,11 @@ function Lesson() {
           onClick={next}
           disabled={!canContinue}
         >
-          {step + 1 >= total ? 'Ολοκλήρωση' : 'Συνέχεια'}
+          {step + 1 >= total
+            ? 'Ολοκλήρωση'
+            : item.type === 'teaching'
+              ? 'Κατάλαβα, συνέχεια'
+              : 'Συνέχεια'}
         </button>
       </div>
     </div>
