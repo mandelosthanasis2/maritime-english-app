@@ -2334,3 +2334,82 @@ h3 {
 .account-menu__item:hover {
   background: var(--teal-soft);
 }
+
+/* ============================================================
+   Smart practice
+   ============================================================ */
+/* Prominent home-screen entry to the adaptive stream. */
+.practice-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-top: 1.4rem;
+  padding: 1.1rem 1.3rem;
+  background: linear-gradient(120deg, var(--navy) 0%, var(--navy-2) 60%, #16586e 100%);
+  color: #fff;
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-lg);
+  text-decoration: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.practice-card:hover {
+  transform: translateY(-2px);
+}
+
+.practice-card:active {
+  transform: scale(0.99);
+}
+
+.practice-card__icon {
+  font-size: 1.8rem;
+  flex-shrink: 0;
+}
+
+.practice-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.practice-card__title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 1.15rem;
+}
+
+.practice-card__subtitle {
+  font-size: 0.88rem;
+  opacity: 0.85;
+}
+
+.practice-card__arrow {
+  margin-left: auto;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+  transition: transform 0.12s ease;
+}
+
+.practice-card:hover .practice-card__arrow {
+  transform: translateX(3px);
+}
+
+/* Topbar label in the practice player (sits where the lesson bar would be). */
+.practice__title {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--navy);
+}
+
+/* Engine introspection line (?debug=1 only). */
+.practice__debug {
+  margin: 0.8rem 0 0;
+  font-size: 0.78rem;
+  font-family: monospace;
+  color: var(--ink-faint);
+  text-align: center;
+}

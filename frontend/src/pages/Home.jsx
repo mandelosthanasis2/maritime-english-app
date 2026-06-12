@@ -112,6 +112,22 @@ function ComingSoon() {
   )
 }
 
+// Prominent entry to the adaptive practice stream, shown above the lessons.
+function SmartPracticeCard() {
+  return (
+    <Link to="/practice" className="practice-card">
+      <span className="practice-card__icon" aria-hidden="true">✨</span>
+      <span className="practice-card__text">
+        <span className="practice-card__title">Έξυπνη εξάσκηση</span>
+        <span className="practice-card__subtitle">
+          Ασκήσεις προσαρμοσμένες στο επίπεδό σου — η εφαρμογή διαλέγει για σένα
+        </span>
+      </span>
+      <span className="practice-card__arrow" aria-hidden="true">→</span>
+    </Link>
+  )
+}
+
 function Home() {
   const [lessons, setLessons] = useState([])
   const [status, setStatus] = useState('loading') // loading | ready | error
@@ -170,6 +186,8 @@ function Home() {
         total={status === 'ready' ? lessons.length : 0}
         loading={progressLoading}
       />
+
+      <SmartPracticeCard />
 
       <section className="home-section">
         <h2 className="home-section__title">Τα μαθήματά σου</h2>

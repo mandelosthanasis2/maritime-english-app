@@ -96,6 +96,48 @@ export async function completeLesson(lessonId) {
   return res.json()
 }
 
+// --- Smart practice (adaptive engine) ----------------------------------------
+
+export async function fetchNextExercise() {
+  const headers = await authHeaders()
+  const res = await fetch(`${API_BASE_URL}/api/next-exercise`, { headers })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // keep generic
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
+export async function recordAnswer(lessonId, itemId, correct) {
+  const headers = await authHeaders()
+  headers['Content-Type'] = 'application/json'
+  const res = await fetch(
+    `${API_BASE_URL}/api/lessons/${encodeURIComponent(lessonId)}/answer`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ item_id: itemId, correct }),
+    },
+  )
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // keep generic
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
 // --- Placement test ----------------------------------------------------------
 
 export function fetchPlacementQuestions() {

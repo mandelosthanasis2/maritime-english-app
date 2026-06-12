@@ -34,6 +34,9 @@ from tts import synthesize as synthesize_speech
 # XP awards.
 XP_FIRST_COMPLETION = 50
 XP_REVIEW = 10
+# Smart-practice answers (recorded via /api/lessons/<id>/answer).
+XP_PRACTICE_CORRECT = 5
+XP_PRACTICE_WRONG = 1
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -117,6 +120,17 @@ def get_or_create_progress(session, user_id, email=None):
     elif email and progress.email != email:
         progress.email = email
     return progress
+
+
+def touch_streak(progress, today):
+    """Count today as activity for the streak (used by lessons and practice)."""
+    last = progress.last_active_date
+    if last is None or last < today - timedelta(days=1):
+        progress.current_streak = 1  # first activity, or a gap > 1 day
+    elif last == today - timedelta(days=1):
+        progress.current_streak += 1  # consecutive day
+    # last == today -> already counted today, leave streak unchanged
+    progress.last_active_date = today
 
 
 def serialize_progress(session, progress):
@@ -342,13 +356,7 @@ def complete_lesson(lesson_id):
             completion.completed_at = now
 
         # Streak: based on the day of the most recent activity.
-        last = progress.last_active_date
-        if last is None or last < today - timedelta(days=1):
-            progress.current_streak = 1  # first activity, or a gap > 1 day
-        elif last == today - timedelta(days=1):
-            progress.current_streak += 1  # consecutive day
-        # last == today -> already counted today, leave streak unchanged
-        progress.last_active_date = today
+        touch_streak(progress, today)
 
         progress.total_xp += xp_earned
 
@@ -517,9 +525,12 @@ def record_answer(lesson_id):
     """Record one answered item; feeds the user's adaptive performance stats.
 
     Body: {"item_id": "...", "correct": true|false}
+
+    Also awards practice XP and counts the day toward the streak, so the smart
+    practice flow rewards the user the same way lessons do.
     """
     try:
-        user_id, _email = verify_request(request)
+        user_id, email = verify_request(request)
     except AuthError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
@@ -564,11 +575,21 @@ def record_answer(lesson_id):
             stat.correct_count += 1
         else:
             stat.wrong_count += 1
+        now = datetime.now(timezone.utc)
         stat.last_correct = correct
-        stat.last_answered_at = datetime.now(timezone.utc)
+        stat.last_answered_at = now
+
+        progress = get_or_create_progress(session, user_id, email)
+        xp_earned = XP_PRACTICE_CORRECT if correct else XP_PRACTICE_WRONG
+        progress.total_xp += xp_earned
+        touch_streak(progress, now.date())
 
         session.commit()
-        return jsonify(serialize_item_stat(stat))
+        payload = serialize_item_stat(stat)
+        payload["xp_earned"] = xp_earned
+        payload["total_xp"] = progress.total_xp
+        payload["current_streak"] = progress.current_streak
+        return jsonify(payload)
     except IntegrityError:
         # Two concurrent first-answers raced on the unique (user, item) row;
         # this attempt loses but the answer was equivalent — report gracefully.

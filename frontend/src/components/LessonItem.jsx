@@ -79,22 +79,32 @@ function DisplayItem({ english, el }) {
   )
 }
 
-function FillGap({ english, el, onAnswered }) {
+function FillGap({ english, el, onAnswered, onResult }) {
   const options = Array.isArray(english.options) ? english.options : []
   const [selected, setSelected] = useState(null)
   const [correct, setCorrect] = useState(false)
   const [revealed, setRevealed] = useState(false)
   const [eliminated, setEliminated] = useState([]) // wrong options hinted away
+  // First-attempt outcome already reported to onResult (reported only once).
+  const [reported, setReported] = useState(false)
 
   const done = correct || revealed
   const correctOption = options.find((o) => normalize(o) === normalize(english.answer))
   const hintsExhausted =
     options.filter((o) => o !== correctOption && !eliminated.includes(o)).length === 0
 
+  function report(result) {
+    if (reported) return
+    setReported(true)
+    onResult?.(result)
+  }
+
   function choose(option) {
     if (done) return
     setSelected(option)
-    if (normalize(option) === normalize(english.answer)) {
+    const isCorrect = normalize(option) === normalize(english.answer)
+    report(isCorrect)
+    if (isCorrect) {
       setCorrect(true)
       onAnswered?.()
     }
@@ -108,6 +118,7 @@ function FillGap({ english, el, onAnswered }) {
 
   function showAnswer() {
     if (done) return
+    report(false)
     setRevealed(true)
     onAnswered?.()
   }
@@ -157,7 +168,7 @@ function FillGap({ english, el, onAnswered }) {
   )
 }
 
-function WordOrder({ english, el, onAnswered }) {
+function WordOrder({ english, el, onAnswered, onResult }) {
   const scrambled = Array.isArray(english.scrambled) ? english.scrambled : []
   // Track chosen words by their index in `scrambled` so duplicate words
   // (e.g. "The"/"the") remain individually addressable.
@@ -165,6 +176,8 @@ function WordOrder({ english, el, onAnswered }) {
   const [result, setResult] = useState(null) // null | 'correct' | 'wrong'
   const [revealed, setRevealed] = useState(false)
   const [hints, setHints] = useState(0)
+  // First-attempt outcome already reported to onResult (reported only once).
+  const [reported, setReported] = useState(false)
 
   const correctOrder = useMemo(
     () => computeCorrectOrder(scrambled, english.text),
@@ -189,9 +202,17 @@ function WordOrder({ english, el, onAnswered }) {
     setPlaced((prev) => prev.filter((i) => i !== index))
   }
 
+  function report(value) {
+    if (reported) return
+    setReported(true)
+    onResult?.(value)
+  }
+
   function check() {
     const built = placed.map((i) => scrambled[i]).join(' ')
-    if (normalize(built) === normalize(english.text)) {
+    const isCorrect = normalize(built) === normalize(english.text)
+    report(isCorrect)
+    if (isCorrect) {
       setResult('correct')
       onAnswered?.()
     } else {
@@ -211,6 +232,7 @@ function WordOrder({ english, el, onAnswered }) {
 
   function showAnswer() {
     if (done) return
+    report(false)
     setPlaced(correctOrder)
     setRevealed(true)
     onAnswered?.()
@@ -296,7 +318,11 @@ function WordOrder({ english, el, onAnswered }) {
   )
 }
 
-export default function LessonItem({ item, onAnswered }) {
+// `onResult` (optional) reports the FIRST attempt's outcome — true/false —
+// exactly once per gradable item (fill_gap / word_order); revealing the answer
+// counts as wrong. The lesson player ignores it; smart practice feeds it to
+// the adaptive engine.
+export default function LessonItem({ item, onAnswered, onResult }) {
   const data = item.data || {}
   const english = data.english || {}
   const el = (data.explanations && data.explanations.el) || {}
@@ -304,9 +330,9 @@ export default function LessonItem({ item, onAnswered }) {
   function renderBody() {
     switch (item.type) {
       case 'fill_gap':
-        return <FillGap english={english} el={el} onAnswered={onAnswered} />
+        return <FillGap english={english} el={el} onAnswered={onAnswered} onResult={onResult} />
       case 'word_order':
-        return <WordOrder english={english} el={el} onAnswered={onAnswered} />
+        return <WordOrder english={english} el={el} onAnswered={onAnswered} onResult={onResult} />
       case 'dialogue':
         return (
           <RolePlay
