@@ -96,6 +96,27 @@ export async function completeLesson(lessonId) {
   return res.json()
 }
 
+export async function setMyRole(role) {
+  const headers = await authHeaders()
+  headers['Content-Type'] = 'application/json'
+  const res = await fetch(`${API_BASE_URL}/api/me/role`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ role }),
+  })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // keep generic
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
 // --- Smart practice (adaptive engine) ----------------------------------------
 
 export async function fetchNextExercise() {

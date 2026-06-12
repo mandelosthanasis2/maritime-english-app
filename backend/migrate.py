@@ -145,7 +145,7 @@ def run():
         # which case create_all builds it with the new columns already present.
         if insp.has_table("user_progress"):
             progress_columns = {c["name"] for c in insp.get_columns("user_progress")}
-            for column in ("cefr_level", "maritime_level"):
+            for column in ("cefr_level", "maritime_level", "user_role"):
                 if column not in progress_columns:
                     conn.execute(
                         text(f"ALTER TABLE user_progress ADD COLUMN {column} VARCHAR")
