@@ -247,6 +247,10 @@ export function adminDraftLessons() {
   return adminRequest('/api/admin/draft-lessons')
 }
 
+export function adminAutoCategorize() {
+  return adminRequest('/api/admin/auto-categorize', { method: 'POST' })
+}
+
 export function adminGenerateTeaching(lessonId) {
   return adminRequest(
     `/api/admin/lessons/${encodeURIComponent(lessonId)}/generate-teaching`,
