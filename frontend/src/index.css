@@ -55,6 +55,30 @@
   --sh-teal: 0 6px 16px rgba(14, 124, 139, 0.32);
   --shadow: var(--sh-md);
 
+  /* Touch targets (mobile-first: thumbs, not cursors) */
+  --tap-min: 44px; /* minimum interactive height/width */
+  --tap-cta: 52px; /* primary call-to-action buttons */
+
+  /* Spacing scale (adopt progressively; replaces ad-hoc rem values) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  /* Motion — one shared language for all transitions */
+  --t-fast: 120ms ease;
+  --t-med: 200ms ease;
+  --t-page: 280ms cubic-bezier(0.2, 0.8, 0.3, 1);
+
+  /* Type scale (mobile base; may bump at larger breakpoints later) */
+  --fs-body: 1rem;
+  --fs-lg: 1.15rem;
+  --fs-title: 1.35rem;
+  --fs-hero: 1.6rem;
+
   font-family: var(--font-body);
   line-height: 1.55;
   color: var(--ink);
@@ -182,14 +206,18 @@ h3 {
   transition: transform 0.16s ease;
 }
 
-.lesson-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--sh-md);
-  border-color: #cfe3e7;
+@media (hover: hover) {
+  .lesson-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--sh-md);
+    border-color: #cfe3e7;
+  }
 }
 
-.lesson-card:hover::after {
-  transform: translateY(-50%) translateX(3px);
+@media (hover: hover) {
+  .lesson-card:hover::after {
+    transform: translateY(-50%) translateX(3px);
+  }
 }
 
 .lesson-card:active {
@@ -394,9 +422,11 @@ h3 {
     box-shadow 0.12s ease;
 }
 
-.option:hover:not(:disabled) {
-  border-color: var(--turquoise);
-  transform: translateY(-1px);
+@media (hover: hover) {
+  .option:hover:not(:disabled) {
+    border-color: var(--turquoise);
+    transform: translateY(-1px);
+  }
 }
 
 .option:active:not(:disabled) {
@@ -481,9 +511,11 @@ h3 {
   transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
 }
 
-.chip:hover {
-  border-color: var(--turquoise);
-  transform: translateY(-1px);
+@media (hover: hover) {
+  .chip:hover {
+    border-color: var(--turquoise);
+    transform: translateY(-1px);
+  }
 }
 
 .chip:active {
@@ -589,8 +621,10 @@ h3 {
   transition: transform 0.12s ease, background 0.12s ease;
 }
 
-.pa-record:hover {
-  background: #d2eaec;
+@media (hover: hover) {
+  .pa-record:hover {
+    background: #d2eaec;
+  }
 }
 
 .pa-record:active {
@@ -996,8 +1030,10 @@ h3 {
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
-.rp-speak:hover {
-  opacity: 1;
+@media (hover: hover) {
+  .rp-speak:hover {
+    opacity: 1;
+  }
 }
 
 .rp-speak--playing {
@@ -1049,8 +1085,10 @@ h3 {
   transition: transform 0.12s ease, background 0.12s ease;
 }
 
-.pa-word--tap:hover {
-  background: #ffeebf;
+@media (hover: hover) {
+  .pa-word--tap:hover {
+    background: #ffeebf;
+  }
 }
 
 .pa-word--tap:active {
@@ -1094,9 +1132,11 @@ h3 {
   transition: background 0.12s ease, color 0.12s ease;
 }
 
-.player__close:hover {
-  background: #e6edef;
-  color: var(--ink-soft);
+@media (hover: hover) {
+  .player__close:hover {
+    background: #e6edef;
+    color: var(--ink-soft);
+  }
 }
 
 .player__bar {
@@ -1195,10 +1235,12 @@ h3 {
   transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
 }
 
-.player__continue:hover:not(:disabled),
-.player__start:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(14, 124, 139, 0.4);
+@media (hover: hover) {
+  .player__continue:hover:not(:disabled),
+  .player__start:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(14, 124, 139, 0.4);
+  }
 }
 
 .player__continue:active:not(:disabled),
@@ -1339,8 +1381,10 @@ h3 {
   transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease;
 }
 
-.help-btn:hover:not(:disabled) {
-  background: #eef3f5;
+@media (hover: hover) {
+  .help-btn:hover:not(:disabled) {
+    background: #eef3f5;
+  }
 }
 
 .help-btn:active:not(:disabled) {
@@ -1808,8 +1852,10 @@ h3 {
   transition: background 0.12s ease;
 }
 
-.account-btn:hover .account-avatar {
-  background: rgba(255, 255, 255, 0.28);
+@media (hover: hover) {
+  .account-btn:hover .account-avatar {
+    background: rgba(255, 255, 255, 0.28);
+  }
 }
 
 .account-backdrop {
@@ -2260,8 +2306,10 @@ h3 {
   transition: color 0.12s ease;
 }
 
-.placement__skip:hover {
-  color: var(--ink-soft);
+@media (hover: hover) {
+  .placement__skip:hover {
+    color: var(--ink-soft);
+  }
 }
 
 /* Invisible spacer keeping the progress bar aligned when there is no ✕. */
@@ -2331,8 +2379,10 @@ h3 {
   transition: background 0.12s ease;
 }
 
-.account-menu__item:hover {
-  background: var(--teal-soft);
+@media (hover: hover) {
+  .account-menu__item:hover {
+    background: var(--teal-soft);
+  }
 }
 
 /* ============================================================
@@ -2353,8 +2403,10 @@ h3 {
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
-.practice-card:hover {
-  transform: translateY(-2px);
+@media (hover: hover) {
+  .practice-card:hover {
+    transform: translateY(-2px);
+  }
 }
 
 .practice-card:active {
@@ -2391,8 +2443,10 @@ h3 {
   transition: transform 0.12s ease;
 }
 
-.practice-card:hover .practice-card__arrow {
-  transform: translateX(3px);
+@media (hover: hover) {
+  .practice-card:hover .practice-card__arrow {
+    transform: translateX(3px);
+  }
 }
 
 /* Topbar label in the practice player (sits where the lesson bar would be). */
@@ -2608,8 +2662,10 @@ h3 {
   transition: transform 0.12s ease;
 }
 
-.next-card__start:hover {
-  transform: translateY(-1px);
+@media (hover: hover) {
+  .next-card__start:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .next-card__start:active {
@@ -2624,8 +2680,10 @@ h3 {
   transition: opacity 0.12s ease;
 }
 
-.next-card__alt:hover {
-  opacity: 1;
+@media (hover: hover) {
+  .next-card__alt:hover {
+    opacity: 1;
+  }
 }
 
 /* ============================================================
@@ -2731,10 +2789,12 @@ h3 {
   transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
-.role-card:hover:not(:disabled) {
-  border-color: var(--turquoise);
-  transform: translateY(-2px);
-  box-shadow: var(--sh-md);
+@media (hover: hover) {
+  .role-card:hover:not(:disabled) {
+    border-color: var(--turquoise);
+    transform: translateY(-2px);
+    box-shadow: var(--sh-md);
+  }
 }
 
 .role-card:active:not(:disabled) {
@@ -2755,4 +2815,213 @@ h3 {
   margin: 1.2rem 0 0;
   font-size: 0.9rem;
   color: var(--ink-faint);
+}
+
+/* ============================================================
+   Mobile foundations & touch targets
+   ------------------------------------------------------------
+   Seafarers use this app almost exclusively on phones. This pass
+   fixes the real mobile bugs (viewport height, iOS input zoom,
+   sticky hover, tiny targets) without changing the visual design.
+   ============================================================ */
+
+/* Our own :active feedback replaces the grey tap flash. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Keyboard / assistive-tech focus, visible over any background. */
+:focus-visible {
+  outline: 3px solid var(--turquoise);
+  outline-offset: 2px;
+}
+
+/* 100vh ignores the mobile URL bar; dvh tracks the real viewport.
+   (The vh rules above remain as the fallback for older browsers.) */
+.app,
+.auth {
+  min-height: 100dvh;
+}
+
+.player {
+  min-height: calc(100dvh - 3.4rem);
+}
+
+/* Clear the iPhone home indicator under sticky/bottom content. */
+.player__footer {
+  padding-bottom: calc(0.4rem + env(safe-area-inset-bottom));
+}
+
+.app-main {
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+}
+
+/* iOS zooms into any focused field under 16px — keep all fields >= 1rem.
+   max() preserves fields that are intentionally larger. */
+input,
+select,
+textarea {
+  font-size: max(16px, 1em);
+}
+
+.admin-input {
+  font-size: 1rem;
+}
+
+.admin-input--compact {
+  font-size: 1rem;
+  padding: 0.45rem 0.5rem;
+}
+
+/* ---- Minimum 44px touch targets (Apple HIG) ------------------- */
+
+/* Exercise options & word-order chips: the core tap surfaces. */
+.option,
+.chip {
+  min-height: var(--tap-min);
+}
+
+.word-bank {
+  gap: 0.6rem;
+}
+
+.answer-row {
+  gap: 0.5rem;
+}
+
+.help-btn {
+  min-height: var(--tap-min);
+  padding: 0.6rem 1.1rem;
+}
+
+.btn {
+  min-height: var(--tap-min);
+}
+
+/* Player chrome. */
+.player__close {
+  width: var(--tap-min);
+  height: var(--tap-min);
+}
+
+.player__continue,
+.player__start {
+  min-height: var(--tap-cta);
+}
+
+/* Listening / speaking controls — the most "physical" actions. */
+.pa-record {
+  min-height: var(--tap-min);
+  padding: 0.65rem 1.3rem;
+  font-size: 1rem;
+}
+
+.pa-listen {
+  min-height: var(--tap-min);
+  padding: 0.6rem 1.2rem;
+}
+
+.rp-input {
+  min-height: var(--tap-min);
+}
+
+.rp-send {
+  min-height: var(--tap-min);
+  padding: 0.6rem 1.2rem;
+}
+
+.rp-speak {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.75;
+}
+
+.teach__listen {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Tappable words inside the pronunciation result: a full 44px block
+   would wreck the text flow — bump as far as inline layout allows. */
+.pa-word--tap {
+  padding: 0.3rem 0.6rem;
+}
+
+/* Header account menu. */
+.account-avatar {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.account-btn {
+  /* Pad the hit area out to ~44px without shifting the header layout. */
+  padding: 0.25rem;
+  margin: -0.25rem;
+}
+
+.account-menu__item,
+.account-logout {
+  min-height: var(--tap-min);
+}
+
+/* Text-style buttons & links. */
+.placement__skip {
+  min-height: var(--tap-min);
+  padding: 0.6rem 1rem;
+}
+
+.next-card__start {
+  min-height: var(--tap-cta);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.next-card__alt {
+  display: inline-block;
+  padding: 0.6rem 0;
+}
+
+.back-link {
+  padding: 0.5rem 0.6rem 0.5rem 0;
+}
+
+.auth-link {
+  /* Inline link: grow the hit area without moving the text. */
+  padding: 0.5rem 0.3rem;
+  margin: -0.5rem -0.3rem;
+}
+
+.auth-tab {
+  min-height: var(--tap-min);
+}
+
+.auth-submit {
+  min-height: var(--tap-cta);
+}
+
+/* Admin (lower priority, but nothing should be sub-44px there either). */
+.admin-btn {
+  min-height: var(--tap-min);
+}
+
+.admin-input,
+.admin-input--compact {
+  min-height: var(--tap-min);
+}
+
+.admin-json-toggle {
+  min-height: var(--tap-min);
+  display: inline-flex;
+  align-items: center;
+}
+
+.role-card {
+  min-height: var(--tap-cta);
 }
