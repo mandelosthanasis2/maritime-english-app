@@ -36,47 +36,32 @@ const COMING_SOON = [
   { key: 'safety', icon: '🦺', label: 'Safety' },
 ]
 
-function Hero() {
+// One-line greeting — the recommendation card right below is the real hero.
+function Greeting() {
   return (
-    <section className="home-hero">
-      <svg className="home-hero__compass" viewBox="0 0 100 100" aria-hidden="true">
-        <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="3" />
-        <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.6" />
-        <polygon points="50,18 57,50 50,46 43,50" fill="currentColor" />
-        <polygon points="50,82 43,50 50,54 57,50" fill="currentColor" opacity="0.5" />
-        <circle cx="50" cy="50" r="3.5" fill="currentColor" />
-      </svg>
-
-      <div className="home-hero__content">
-        <h1 className="home-hero__greeting">Καλώς ήρθες, ναυτικέ! ⚓</h1>
-        <p className="home-hero__subtitle">
-          Μάθε Αγγλικά για τη δουλειά σου στη θάλασσα — ένα βήμα τη φορά.
-        </p>
-      </div>
-
-      <svg className="home-hero__waves" viewBox="0 0 400 40" preserveAspectRatio="none" aria-hidden="true">
-        <path d="M0 20 Q 50 6 100 20 T 200 20 T 300 20 T 400 20 V40 H0 Z" fill="currentColor" opacity="0.5" />
-        <path d="M0 28 Q 50 14 100 28 T 200 28 T 300 28 T 400 28 V40 H0 Z" fill="currentColor" />
-      </svg>
-    </section>
+    <p className="home-greeting">
+      <span aria-hidden="true">⚓</span>
+      Καλώς ήρθες, ναυτικέ — καλό ταξίδι!
+    </p>
   )
 }
 
-function StatsRow({ streak, xp, completed, total, loading }) {
+// Compact one-row strip: streak / XP / lessons. Replaces the three cards
+// that crowded a 375px screen.
+function StatsStrip({ streak, xp, completed, total, loading }) {
   const dash = loading ? '…' : null
   const stats = [
-    { icon: '🔥', value: dash ?? String(streak), label: 'ημέρες σερί' },
+    { icon: '🔥', value: dash ?? String(streak), label: 'σερί' },
     { icon: '⭐', value: dash ?? String(xp), label: 'XP' },
     { icon: '✅', value: dash ?? `${completed}/${total}`, label: 'μαθήματα' },
   ]
   return (
-    <div className="stats-row">
+    <div className="stats-strip">
       {stats.map((s) => (
-        <div key={s.label} className="stat-card">
-          <span className="stat-card__icon">{s.icon}</span>
-          <span className="stat-card__value">{s.value}</span>
-          <span className="stat-card__label">{s.label}</span>
-        </div>
+        <span key={s.label} className="stats-strip__item">
+          <span aria-hidden="true">{s.icon}</span>
+          <b>{s.value}</b> {s.label}
+        </span>
       ))}
     </div>
   )
@@ -113,17 +98,16 @@ function LessonCard({ lesson, completed }) {
   )
 }
 
+// Quiet teaser row — must not compete with the real content above it.
 function ComingSoon() {
   return (
-    <section className="home-section">
-      <h2 className="home-section__title">Έρχονται σύντομα</h2>
-      <div className="soon-grid">
+    <section className="home-soon">
+      <h2 className="home-soon__title">Έρχονται σύντομα</h2>
+      <div className="soon-pills">
         {COMING_SOON.map((t) => (
-          <div key={t.key} className="soon-card" aria-disabled="true">
-            <span className="soon-card__icon">{t.icon}</span>
-            <span className="soon-card__label">{t.label}</span>
-            <span className="soon-card__lock">🔒</span>
-          </div>
+          <span key={t.key} className="soon-pill" aria-disabled="true">
+            {t.icon} {t.label} <span aria-hidden="true">🔒</span>
+          </span>
         ))}
       </div>
     </section>
@@ -183,18 +167,24 @@ function NextLessonCard() {
   const { lesson, reason_el: reason } = data
   return (
     <div className="next-card">
-      <p className="next-card__kicker">✨ Συνέχισε να μαθαίνεις</p>
-      <h2 className="next-card__title">{lesson.title_el || lesson.title}</h2>
-      {lesson.title_el && <p className="next-card__title-en">{lesson.title}</p>}
-      <p className="next-card__reason">Σου το προτείνω γιατί: {reason}</p>
-      <div className="next-card__actions">
-        <Link to={`/lessons/${lesson.lesson_id}`} className="next-card__start">
-          Ξεκίνα το μάθημα
-        </Link>
-        <Link to="/practice" className="next-card__alt">
-          ή κάνε ελεύθερη εξάσκηση →
-        </Link>
+      <div className="next-card__body">
+        <p className="next-card__kicker">✨ Συνέχισε να μαθαίνεις</p>
+        <h2 className="next-card__title">{lesson.title_el || lesson.title}</h2>
+        {lesson.title_el && <p className="next-card__title-en">{lesson.title}</p>}
+        <p className="next-card__reason">Σου το προτείνω γιατί: {reason}</p>
+        <div className="next-card__actions">
+          <Link to={`/lessons/${lesson.lesson_id}`} className="next-card__start">
+            Ξεκίνα το μάθημα
+          </Link>
+          <Link to="/practice" className="next-card__alt">
+            ή κάνε ελεύθερη εξάσκηση →
+          </Link>
+        </div>
       </div>
+      <svg className="next-card__waves" viewBox="0 0 400 40" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 20 Q 50 6 100 20 T 200 20 T 300 20 T 400 20 V40 H0 Z" fill="currentColor" opacity="0.5" />
+        <path d="M0 28 Q 50 14 100 28 T 200 28 T 300 28 T 400 28 V40 H0 Z" fill="currentColor" />
+      </svg>
     </div>
   )
 }
@@ -249,16 +239,17 @@ function Home() {
 
   return (
     <div className="home">
-      <Hero />
-      <StatsRow
+      <Greeting />
+
+      <NextLessonCard />
+
+      <StatsStrip
         streak={progress?.current_streak ?? 0}
         xp={progress?.total_xp ?? 0}
         completed={progress?.lessons_completed ?? 0}
         total={status === 'ready' ? lessons.length : 0}
         loading={progressLoading}
       />
-
-      <NextLessonCard />
 
       {status === 'loading' && (
         <section className="home-section">
