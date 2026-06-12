@@ -45,6 +45,10 @@ class Lesson(Base):
     version = Column(Integer)
     # draft | approved — AI-suggested lessons start as draft; existing default approved.
     status = Column(String, nullable=False, server_default="approved")
+    # Who the lesson is for: engineer | deck | common.
+    # "common" = for everyone (safety, grammar, basic communication, SMCP);
+    # grammar-track lessons are always common.
+    role_category = Column(String, nullable=False, server_default="common")
 
     items = relationship(
         "Item",

@@ -10,6 +10,14 @@ const TRACK_META = {
   safety: { icon: '🦺', label: 'Safety' },
 }
 
+// The lesson list is organised by who the lesson is for. Unknown/missing
+// categories fall back to "common" so nothing ever disappears from the home.
+const ROLE_GROUPS = [
+  { key: 'engineer', icon: '⚙️', title: 'Για Μηχανικούς' },
+  { key: 'deck', icon: '🧭', title: 'Για Αξιωματικούς Καταστρώματος' },
+  { key: 'common', icon: '🤝', title: 'Κοινά για όλους' },
+]
+
 // Placeholder tracks shown as locked "coming soon" cards so the app feels like
 // it has a roadmap. These are NOT real lessons — purely a visual teaser.
 const COMING_SOON = [
@@ -242,36 +250,58 @@ function Home() {
 
       <NextLessonCard />
 
-      <section className="home-section">
-        <h2 className="home-section__title">Τα μαθήματά σου</h2>
-
-        {status === 'loading' && (
+      {status === 'loading' && (
+        <section className="home-section">
+          <h2 className="home-section__title">Τα μαθήματά σου</h2>
           <p className="state state--loading">Φόρτωση μαθημάτων…</p>
-        )}
+        </section>
+      )}
 
-        {status === 'error' && (
+      {status === 'error' && (
+        <section className="home-section">
+          <h2 className="home-section__title">Τα μαθήματά σου</h2>
           <div className="state state--error">
             <p>Δεν ήταν δυνατή η φόρτωση των μαθημάτων.</p>
             <p className="state__detail">{error}</p>
           </div>
-        )}
+        </section>
+      )}
 
-        {status === 'ready' && lessons.length === 0 && (
+      {status === 'ready' && lessons.length === 0 && (
+        <section className="home-section">
+          <h2 className="home-section__title">Τα μαθήματά σου</h2>
           <p className="state">Δεν υπάρχουν μαθήματα ακόμη.</p>
-        )}
+        </section>
+      )}
 
-        {status === 'ready' && lessons.length > 0 && (
-          <div className="lesson-list">
-            {lessons.map((lesson) => (
-              <LessonCard
-                key={lesson.lesson_id}
-                lesson={lesson}
-                completed={completedSet.has(lesson.lesson_id)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {status === 'ready' &&
+        lessons.length > 0 &&
+        ROLE_GROUPS.map((group) => {
+          const groupLessons = lessons.filter((lesson) => {
+            const category =
+              lesson.role_category === 'engineer' || lesson.role_category === 'deck'
+                ? lesson.role_category
+                : 'common'
+            return category === group.key
+          })
+          if (groupLessons.length === 0) return null
+          return (
+            <section key={group.key} className="home-section">
+              <h2 className="home-section__title">
+                {group.icon} {group.title}
+              </h2>
+              <div className="lesson-list">
+                {groupLessons.map((lesson) => (
+                  <LessonCard
+                    key={lesson.lesson_id}
+                    lesson={lesson}
+                    completed={completedSet.has(lesson.lesson_id)}
+                  />
+                ))}
+              </div>
+            </section>
+          )
+        })}
 
       <ComingSoon />
     </div>

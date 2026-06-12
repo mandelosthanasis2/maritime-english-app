@@ -16,6 +16,12 @@ const DIFFICULTIES = ['A1', 'A2', 'B1', 'B2', 'C1']
 const SKILL_TYPES = ['teaching', 'vocabulary', 'listening', 'fill_gap', 'word_order', 'speaking', 'roleplay']
 const TRACKS = ['maritime', 'grammar']
 const TRACK_LABEL = { grammar: 'Γραμματική', maritime: 'Maritime' }
+const ROLE_CATEGORIES = ['engineer', 'deck', 'common']
+const ROLE_LABEL = {
+  engineer: '⚙️ Μηχανικοί',
+  deck: '🧭 Κατάστρωμα',
+  common: '🤝 Κοινά για όλους',
+}
 const KINDS = [
   { value: 'auto', label: 'Αυτόματο' },
   { value: 'grammar', label: 'Γραμματική' },
@@ -189,19 +195,39 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
   const [titleEl, setTitleEl] = useState(group.title_el || '')
   const [description, setDescription] = useState(group.description || '')
   const [track, setTrack] = useState(group.track || 'maritime')
+  const [roleCategory, setRoleCategory] = useState(group.role_category || 'common')
   const [busy, setBusy] = useState(null)
   const [note, setNote] = useState(null) // inline error shown ON this card
+
+  function headerPayload() {
+    return { title, title_el: titleEl, description, track, role_category: roleCategory }
+  }
 
   async function saveHeader() {
     setBusy('save')
     setNote(null)
     try {
-      await adminEditLesson(group.lesson_id, { title, title_el: titleEl, description, track })
+      await adminEditLesson(group.lesson_id, headerPayload())
     } catch (err) {
       setNote(err.message)
       onError(err.message)
     } finally {
       setBusy(null)
+    }
+  }
+
+  // Existing lessons: the header is not editable, but the role category is —
+  // saved immediately on change (only that field, so legacy tracks like
+  // "engine" never round-trip into the track validator).
+  async function changeExistingCategory(value) {
+    const previous = roleCategory
+    setRoleCategory(value)
+    setNote(null)
+    try {
+      await adminEditLesson(group.lesson_id, { role_category: value })
+    } catch (err) {
+      setRoleCategory(previous)
+      setNote(`Η αλλαγή κατηγορίας απέτυχε: ${err.message}`)
     }
   }
 
@@ -213,7 +239,7 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
       // and round-tripping it would send legacy tracks (e.g. "engine") into
       // the track validator — the silent 400 that used to swallow approvals.
       if (!group.existing) {
-        await adminEditLesson(group.lesson_id, { title, title_el: titleEl, description, track })
+        await adminEditLesson(group.lesson_id, headerPayload())
       }
       await adminApproveLesson(group.lesson_id)
       onNotice(`✓ Το μάθημα «${group.title}» εγκρίθηκε — τα drafts του είναι πλέον live.`)
@@ -247,7 +273,19 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
       </div>
 
       {group.existing ? (
-        <h3 className="admin-lesson__title">{group.title}</h3>
+        <>
+          <h3 className="admin-lesson__title">{group.title}</h3>
+          <label className="admin-field admin-field--inline">
+            <span className="admin-field__label">Κατηγορία</span>
+            <select
+              className="admin-input"
+              value={roleCategory}
+              onChange={(e) => changeExistingCategory(e.target.value)}
+            >
+              {ROLE_CATEGORIES.map((c) => <option key={c} value={c}>{ROLE_LABEL[c]}</option>)}
+            </select>
+          </label>
+        </>
       ) : (
         <div className="admin-lesson__fields">
           <input
@@ -272,6 +310,16 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
           <select className="admin-input" value={track} onChange={(e) => setTrack(e.target.value)}>
             {TRACKS.map((t) => <option key={t} value={t}>{TRACK_LABEL[t]}</option>)}
           </select>
+          <label className="admin-field admin-field--inline">
+            <span className="admin-field__label">Κατηγορία</span>
+            <select
+              className="admin-input"
+              value={roleCategory}
+              onChange={(e) => setRoleCategory(e.target.value)}
+            >
+              {ROLE_CATEGORIES.map((c) => <option key={c} value={c}>{ROLE_LABEL[c]}</option>)}
+            </select>
+          </label>
         </div>
       )}
 
@@ -318,6 +366,8 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
 function TeachingBackfill({ lessons, reload }) {
   const [busyId, setBusyId] = useState(null)
   const [notes, setNotes] = useState({}) // lesson_id -> status message
+  // Optimistic category overrides while the autosave is in flight.
+  const [categories, setCategories] = useState({})
 
   async function generate(lessonId) {
     setBusyId(lessonId)
@@ -333,6 +383,19 @@ function TeachingBackfill({ lessons, reload }) {
       setNotes((n) => ({ ...n, [lessonId]: err.message }))
     } finally {
       setBusyId(null)
+    }
+  }
+
+  async function changeCategory(lessonId, value) {
+    setCategories((c) => ({ ...c, [lessonId]: value }))
+    setNotes((n) => ({ ...n, [lessonId]: null }))
+    try {
+      await adminEditLesson(lessonId, { role_category: value })
+      setNotes((n) => ({ ...n, [lessonId]: '✓ Η κατηγορία ενημερώθηκε.' }))
+      reload()
+    } catch (err) {
+      setCategories((c) => ({ ...c, [lessonId]: undefined }))
+      setNotes((n) => ({ ...n, [lessonId]: `Η αλλαγή κατηγορίας απέτυχε: ${err.message}` }))
     }
   }
 
@@ -357,6 +420,14 @@ function TeachingBackfill({ lessons, reload }) {
                 {lesson.item_count} {lesson.item_count === 1 ? 'item' : 'items'}
               </span>
             </div>
+            <select
+              className="admin-input admin-input--compact"
+              value={categories[lesson.lesson_id] ?? lesson.role_category ?? 'common'}
+              onChange={(e) => changeCategory(lesson.lesson_id, e.target.value)}
+              aria-label="Κατηγορία"
+            >
+              {ROLE_CATEGORIES.map((c) => <option key={c} value={c}>{ROLE_LABEL[c]}</option>)}
+            </select>
             {notes[lesson.lesson_id] && (
               <p className="admin-teach-row__note">{notes[lesson.lesson_id]}</p>
             )}
