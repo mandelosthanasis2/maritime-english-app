@@ -257,6 +257,11 @@ W_LESSON_NEW = 2.0  # never completed
 W_LESSON_REVIEW = 1.5  # completed long ago — worth revisiting
 W_LESSON_MISTAKES = 2.5  # contains items the user last got WRONG
 W_LESSON_WEAKNESS = 2.0  # scaled by how weak its skill_types are
+# Role fit: an engineer mostly gets engineer + common lessons, a deck officer
+# deck + common; the opposite role is pushed away (rarely served, never
+# excluded). "common" lessons are neutral; undecided/no role changes nothing.
+W_LESSON_ROLE_MATCH = 2.0
+W_LESSON_ROLE_MISMATCH = -3.0
 
 SKILL_LABEL_EL = {
     "vocabulary": "το λεξιλόγιο",
@@ -270,6 +275,10 @@ TRACK_GOAL_EL = {
     "grammar": "τη γραμματική σου",
     "maritime": "τη ναυτική σου ορολογία",
 }
+ROLE_LABEL_EL = {
+    "engineer": "Μηχανικός",
+    "deck": "Αξιωματικός Καταστρώματος",
+}
 
 
 def _lesson_level(items):
@@ -278,7 +287,7 @@ def _lesson_level(items):
     return CEFR_LEVELS[round(average)]
 
 
-def _reason_el(code, track, lesson_level, weak_skill=None):
+def _reason_el(code, track, lesson_level, weak_skill=None, role=None):
     """Plain Greek templates explaining the pick — no API calls (rule: zero cost)."""
     goal = TRACK_GOAL_EL.get(track, "τα Αγγλικά σου")
     if code == "mistakes":
@@ -288,6 +297,11 @@ def _reason_el(code, track, lesson_level, weak_skill=None):
     if code == "weakness" and weak_skill in SKILL_LABEL_EL:
         return (
             f"Δουλεύει {SKILL_LABEL_EL[weak_skill]}, εκεί που χρειάζεσαι εξάσκηση — "
+            f"και είναι στο επίπεδό σου ({lesson_level})."
+        )
+    if code == "role" and role in ROLE_LABEL_EL:
+        return (
+            f"Για τον ρόλο σου ως {ROLE_LABEL_EL[role]} — "
             f"και είναι στο επίπεδό σου ({lesson_level})."
         )
     return f"Είναι στο επίπεδό σου ({lesson_level}) και θα δυναμώσει {goal}."
@@ -344,10 +358,22 @@ def choose_next_lesson(progress, lessons, stats, completions, now=None, rng=None
         if total >= WEAKNESS_MIN_ATTEMPTS
     }
 
+    user_role = getattr(progress, "user_role", None)
+
     best = None  # (score, lesson, factors)
     for lesson, items in candidates[track]:
         score = 0.0
         factors = {"level": _lesson_level(items)}
+
+        # Role fit: only when the user chose engineer/deck and the lesson is
+        # role-specific; "common" lessons stay neutral for everyone.
+        category = lesson.role_category or "common"
+        if user_role in ROLE_LABEL_EL and category != "common":
+            if category == user_role:
+                score += W_LESSON_ROLE_MATCH
+                factors["role_match"] = True
+            else:
+                score += W_LESSON_ROLE_MISMATCH
 
         # Level fit, like the item scorer but on the lesson's dominant band.
         distance = abs(_level_index(factors["level"]) - _level_index(target_level))
@@ -401,9 +427,13 @@ def choose_next_lesson(progress, lessons, stats, completions, now=None, rng=None
         code = "review"
     elif factors.get("weak_skill"):
         code = "weakness"
+    elif factors.get("role_match"):
+        code = "role"
     else:
         code = "level"
-    reason_el = _reason_el(code, track, factors["level"], factors.get("weak_skill"))
+    reason_el = _reason_el(
+        code, track, factors["level"], factors.get("weak_skill"), user_role
+    )
     meta = {
         "track": track,
         "target_level": target_level,

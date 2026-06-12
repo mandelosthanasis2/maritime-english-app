@@ -6,6 +6,7 @@ import Lesson from './pages/Lesson.jsx'
 import Login from './pages/Login.jsx'
 import Placement from './pages/Placement.jsx'
 import Practice from './pages/Practice.jsx'
+import RoleSelect from './pages/RoleSelect.jsx'
 import AccountMenu from './components/AccountMenu.jsx'
 import { useAuth } from './auth/AuthContext.jsx'
 import { fetchMyProgress } from './api.js'
@@ -33,22 +34,27 @@ function AnchorLogo() {
 function App() {
   const { user, loading, configured } = useAuth()
 
-  // Onboarding gate: a signed-in user with no cefr_level (placement not taken)
-  // sees the placement test before the home screen. 'checking' while the
+  // Onboarding gate, in order: role choice first (no user_role), then the
+  // placement test (no cefr_level), then the app. 'checking' while the
   // progress loads; a failed check never blocks the app.
-  const [placement, setPlacement] = useState('checking') // checking | needed | ready
+  const [onboarding, setOnboarding] = useState('checking') // checking | role | placement | ready
+  const [needsPlacement, setNeedsPlacement] = useState(false)
   useEffect(() => {
     if (!user) {
-      setPlacement('checking')
+      setOnboarding('checking')
       return undefined
     }
     let active = true
     fetchMyProgress()
       .then((p) => {
-        if (active) setPlacement(p.cefr_level ? 'ready' : 'needed')
+        if (!active) return
+        setNeedsPlacement(!p.cefr_level)
+        if (!p.user_role) setOnboarding('role')
+        else if (!p.cefr_level) setOnboarding('placement')
+        else setOnboarding('ready')
       })
       .catch(() => {
-        if (active) setPlacement('ready')
+        if (active) setOnboarding('ready')
       })
     return () => {
       active = false
@@ -85,7 +91,7 @@ function App() {
     return <Login />
   }
 
-  if (placement === 'checking') {
+  if (onboarding === 'checking') {
     return (
       <div className="auth">
         <div className="splash">
@@ -96,8 +102,8 @@ function App() {
     )
   }
 
-  // Placement not taken yet — show the test before anything else.
-  if (placement === 'needed') {
+  // Onboarding step 1: pick a role (engineer / deck / undecided).
+  if (onboarding === 'role') {
     return (
       <div className="app">
         <header className="app-header">
@@ -105,7 +111,25 @@ function App() {
           <AccountMenu />
         </header>
         <main className="app-main">
-          <Placement gated onDone={() => setPlacement('ready')} />
+          <RoleSelect
+            gated
+            onDone={() => setOnboarding(needsPlacement ? 'placement' : 'ready')}
+          />
+        </main>
+      </div>
+    )
+  }
+
+  // Onboarding step 2: the placement test.
+  if (onboarding === 'placement') {
+    return (
+      <div className="app">
+        <header className="app-header">
+          <AnchorLogo />
+          <AccountMenu />
+        </header>
+        <main className="app-main">
+          <Placement gated onDone={() => setOnboarding('ready')} />
         </main>
       </div>
     )
@@ -123,6 +147,7 @@ function App() {
           <Route path="/lessons/:lessonId" element={<Lesson />} />
           <Route path="/placement" element={<Placement />} />
           <Route path="/practice" element={<Practice />} />
+          <Route path="/role" element={<RoleSelect />} />
           <Route path="/admin" element={<Admin />} />
         </Routes>
       </main>

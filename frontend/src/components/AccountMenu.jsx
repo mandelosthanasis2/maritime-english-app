@@ -31,6 +31,16 @@ export default function AccountMenu() {
               className="account-menu__item"
               onClick={() => {
                 setOpen(false)
+                navigate('/role')
+              }}
+            >
+              Άλλαξε ρόλο
+            </button>
+            <button
+              type="button"
+              className="account-menu__item"
+              onClick={() => {
+                setOpen(false)
                 navigate('/placement')
               }}
             >

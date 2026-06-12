@@ -18,6 +18,16 @@ const ROLE_GROUPS = [
   { key: 'common', icon: '🤝', title: 'Κοινά για όλους' },
 ]
 
+// Group order adapts to the user's role: their own group first, then the
+// common lessons, then the rest. Undecided/unknown keeps the default order.
+function roleGroupOrder(userRole) {
+  if (userRole !== 'engineer' && userRole !== 'deck') return ROLE_GROUPS
+  const own = ROLE_GROUPS.find((g) => g.key === userRole)
+  const common = ROLE_GROUPS.find((g) => g.key === 'common')
+  const rest = ROLE_GROUPS.filter((g) => g !== own && g !== common)
+  return [own, common, ...rest]
+}
+
 // Placeholder tracks shown as locked "coming soon" cards so the app feels like
 // it has a roadmap. These are NOT real lessons — purely a visual teaser.
 const COMING_SOON = [
@@ -276,7 +286,7 @@ function Home() {
 
       {status === 'ready' &&
         lessons.length > 0 &&
-        ROLE_GROUPS.map((group) => {
+        roleGroupOrder(progress?.user_role).map((group) => {
           const groupLessons = lessons.filter((lesson) => {
             const category =
               lesson.role_category === 'engineer' || lesson.role_category === 'deck'

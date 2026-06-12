@@ -157,6 +157,8 @@ def serialize_progress(session, progress):
         # Placement results; null until the user takes the placement test.
         "cefr_level": progress.cefr_level,
         "maritime_level": progress.maritime_level,
+        # Onboarding role; null until chosen.
+        "user_role": progress.user_role,
     }
 
 
@@ -316,6 +318,33 @@ def get_my_progress():
     except Exception:  # pragma: no cover - unexpected failure
         session.rollback()
         logger.exception("Fetching progress failed")
+        return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/me/role", methods=["POST"])
+def set_my_role():
+    """Save the user's onboarding role choice. Body: {"role": engineer|deck|undecided}."""
+    try:
+        user_id, email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    payload = request.get_json(silent=True) or {}
+    role = payload.get("role")
+    if role not in ("engineer", "deck", "undecided"):
+        return jsonify({"error": "role must be one of: engineer, deck, undecided."}), 400
+
+    session = SessionLocal()
+    try:
+        progress = get_or_create_progress(session, user_id, email)
+        progress.user_role = role
+        session.commit()
+        return jsonify(serialize_progress(session, progress))
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Saving user role failed")
         return jsonify({"error": "Internal error."}), 500
     finally:
         session.close()

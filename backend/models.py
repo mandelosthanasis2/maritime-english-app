@@ -102,6 +102,8 @@ class UserProgress(Base):
     # Placement test results; NULL until the user takes the placement.
     cefr_level = Column(String)  # A1 | A2 | B1 | B2 | C1
     maritime_level = Column(String)  # none | basic | proficient
+    # Onboarding role choice; NULL until chosen in onboarding.
+    user_role = Column(String)  # engineer | deck | undecided
 
 
 class UserLessonCompletion(Base):
