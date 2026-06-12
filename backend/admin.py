@@ -33,6 +33,7 @@ ALLOWED_SKILL_TYPES = {
 }
 ALLOWED_KINDS = {"auto", "grammar", "maritime"}
 ALLOWED_TRACKS = {"grammar", "maritime"}
+ALLOWED_ROLE_CATEGORIES = {"engineer", "deck", "common"}
 
 MAX_CHUNKS = 8
 TARGET_CHUNK_CHARS = 6000
@@ -57,12 +58,19 @@ TEACHING FIRST (concept cards)
 AVOIDING DUPLICATE LESSONS
 - You will be given a list of EXISTING LESSON TITLES. If the content you are creating fits one of them, reuse that EXACT title in "lesson_title_en" (so it is merged, not duplicated). Only invent a new title when none fits.
 
+DECIDING THE ROLE CATEGORY
+Each lesson also gets a "role_category" — who on board it is for:
+- "engineer": engine room, machinery, engine orders, fuel/lubrication, technical maintenance.
+- "deck": bridge, navigation, radar, helm/steering, mooring, cargo handling on deck.
+- "common": for everyone — safety, emergencies, general communication, SMCP basics, and ALL grammar lessons (track "grammar" is ALWAYS "common").
+
 OUTPUT: a JSON array of LESSON objects:
 {
   "lesson_title_en": "<English lesson title>",
   "lesson_title_el": "<Greek lesson title>",
   "lesson_description_el": "<one short Greek sentence describing the lesson>",
   "track": "maritime" | "grammar",
+  "role_category": "engineer" | "deck" | "common",
   "items": [ <item objects, see schema below> ]
 }
 
@@ -251,6 +259,14 @@ def _resolve_track(value, kind):
     return track if track in ALLOWED_TRACKS else "maritime"
 
 
+def _resolve_role_category(value, track):
+    """Validate the model's role_category; grammar lessons are always common."""
+    if track == "grammar":
+        return "common"
+    category = (value or "").strip().lower()
+    return category if category in ALLOWED_ROLE_CATEGORIES else "common"
+
+
 def _chunk_user_prompt(chunk, kind, known_titles):
     if kind == "grammar":
         kind_line = 'The content kind is "grammar" (general English): set track="grammar".'
@@ -360,6 +376,7 @@ def generate_lessons(source_text, kind, existing_lessons=None):
                 continue
             norm = _norm(title_en)
             track = _resolve_track(lesson.get("track"), kind)
+            role_category = _resolve_role_category(lesson.get("role_category"), track)
 
             if norm in by_norm:
                 by_norm[norm]["items"].extend(items)
@@ -370,6 +387,8 @@ def generate_lessons(source_text, kind, existing_lessons=None):
                     "title_el": lesson.get("lesson_title_el"),
                     "description_el": lesson.get("lesson_description_el"),
                     "track": match.get("track") or track,
+                    # Existing lessons keep their curated category untouched.
+                    "role_category": None,
                     "existing_lesson_id": match["lesson_id"],
                     "items": list(items),
                 }
@@ -381,6 +400,7 @@ def generate_lessons(source_text, kind, existing_lessons=None):
                     "title_el": lesson.get("lesson_title_el"),
                     "description_el": lesson.get("lesson_description_el"),
                     "track": track,
+                    "role_category": role_category,
                     "existing_lesson_id": None,
                     "items": list(items),
                 }

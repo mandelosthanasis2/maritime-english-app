@@ -2692,3 +2692,11 @@ h3 {
   border-radius: var(--r-sm);
   padding: 0.5rem 0.7rem;
 }
+
+/* Compact select for inline rows (e.g. category in the backfill list). */
+.admin-input--compact {
+  width: auto;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+}

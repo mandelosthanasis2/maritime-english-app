@@ -127,6 +127,18 @@ def run():
             logger.info("Added lessons.title_el.")
         else:
             logger.info("lessons.title_el already exists — skipping.")
+        # Role category: engineer | deck | common. Existing lessons default to
+        # "common"; the admin reclassifies them from the review UI.
+        if "role_category" not in lesson_columns:
+            conn.execute(
+                text(
+                    "ALTER TABLE lessons ADD COLUMN role_category VARCHAR "
+                    "NOT NULL DEFAULT 'common'"
+                )
+            )
+            logger.info("Added lessons.role_category (default 'common').")
+        else:
+            logger.info("lessons.role_category already exists — skipping.")
 
         # User progress: placement results (NULL until the user takes the
         # placement test). The table may not exist yet on a fresh database, in

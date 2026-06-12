@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from admin import (
     ALLOWED_DIFFICULTY,
+    ALLOWED_ROLE_CATEGORIES,
     ALLOWED_SKILL_TYPES,
     ALLOWED_TRACKS,
     AdminGenError,
@@ -76,6 +77,7 @@ def serialize_lesson_meta(lesson, item_count):
     return {
         "lesson_id": lesson.lesson_id,
         "track": lesson.track,
+        "role_category": lesson.role_category or "common",
         "module": lesson.module,
         "title": lesson.title,
         "description": lesson.description,
@@ -716,6 +718,7 @@ def serialize_admin_lesson(lesson, items):
         "title_el": lesson.title_el,
         "description": lesson.description,
         "track": lesson.track,
+        "role_category": lesson.role_category or "common",
         "status": lesson.status,
         # True when items are being attached to an already-approved lesson.
         "existing": lesson.status == "approved",
@@ -810,6 +813,7 @@ def admin_generate_items():
                 lesson = Lesson(
                     lesson_id=f"dl_{uuid.uuid4().hex[:12]}",
                     track=entry["track"],
+                    role_category=entry.get("role_category") or "common",
                     module=None,
                     title=entry["title_en"],
                     title_el=entry.get("title_el"),
@@ -1171,6 +1175,20 @@ def admin_edit_lesson(lesson_id):
                 )
                 return jsonify({"error": f"Invalid track: '{payload['track']}'."}), 400
             lesson.track = payload["track"]
+        if "role_category" in payload:
+            if payload["role_category"] not in ALLOWED_ROLE_CATEGORIES:
+                logger.warning(
+                    "Edit lesson %s rejected: invalid role_category %r",
+                    lesson_id,
+                    payload["role_category"],
+                )
+                return (
+                    jsonify(
+                        {"error": f"Invalid role_category: '{payload['role_category']}'."}
+                    ),
+                    400,
+                )
+            lesson.role_category = payload["role_category"]
 
         session.commit()
         items = session.query(Item).filter_by(lesson_id=lesson_id).order_by(Item.order_index).all()
