@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   adminApproveLesson,
+  adminAutoCategorize,
   adminDeleteItem,
   adminDeleteLesson,
   adminDraftLessons,
@@ -368,6 +369,39 @@ function TeachingBackfill({ lessons, reload }) {
   const [notes, setNotes] = useState({}) // lesson_id -> status message
   // Optimistic category overrides while the autosave is in flight.
   const [categories, setCategories] = useState({})
+  const [categorizing, setCategorizing] = useState(false)
+  const [summary, setSummary] = useState(null) // auto-categorize outcome line
+
+  async function autoCategorize() {
+    if (categorizing) return
+    setCategorizing(true)
+    setSummary(null)
+    try {
+      const res = await adminAutoCategorize()
+      if (res.checked === 0) {
+        setSummary(res.message || 'Δεν υπάρχουν μαθήματα για ταξινόμηση.')
+      } else {
+        const counts = res.counts || {}
+        const parts = [
+          counts.engineer ? `${counts.engineer} μηχανικοί` : null,
+          counts.deck ? `${counts.deck} κατάστρωμα` : null,
+          counts.common ? `${counts.common} κοινά` : null,
+        ].filter(Boolean)
+        setSummary(
+          `✓ ${res.checked} ${res.checked === 1 ? 'μάθημα ελέγχθηκε' : 'μαθήματα ελέγχθηκαν'}` +
+            (parts.length ? `: ${parts.join(', ')}` : '') +
+            ` (${res.updated} ${res.updated === 1 ? 'άλλαξε' : 'άλλαξαν'} κατηγορία).` +
+            ' Μπορείς να διορθώσεις όποια διαφωνείς από τα dropdown.',
+        )
+      }
+      setCategories({}) // drop stale optimistic overrides — fresh data incoming
+      reload()
+    } catch (err) {
+      setSummary(`Η αυτόματη ταξινόμηση απέτυχε: ${err.message}`)
+    } finally {
+      setCategorizing(false)
+    }
+  }
 
   async function generate(lessonId) {
     setBusyId(lessonId)
@@ -408,6 +442,21 @@ function TeachingBackfill({ lessons, reload }) {
         Για μαθήματα που φτιάχτηκαν πριν υπάρξει η διδασκαλία: δημιουργεί 1-2 teaching
         items στην αρχή του μαθήματος, ως drafts για έλεγχο πριν την έγκριση.
       </p>
+      <button
+        type="button"
+        className="admin-btn admin-btn--ghost"
+        onClick={autoCategorize}
+        disabled={categorizing}
+      >
+        {categorizing ? (
+          <>
+            <span className="pa-spinner" aria-hidden="true" /> Ταξινόμηση…
+          </>
+        ) : (
+          '✨ Αυτόματη ταξινόμηση μαθημάτων'
+        )}
+      </button>
+      {summary && <p className="admin-notice">{summary}</p>}
       <div className="admin-teach-list">
         {lessons.map((lesson) => (
           <div key={lesson.lesson_id} className="admin-teach-row">

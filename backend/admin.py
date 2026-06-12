@@ -420,6 +420,93 @@ def generate_lessons(source_text, kind, existing_lessons=None):
     return proposed
 
 
+# --- Auto-categorization of existing lessons -----------------------------------
+#
+# One batched Claude call (chunked for very large pools) classifies many
+# lessons at once into engineer / deck / common, from their title plus a small
+# sample of their items. Grammar-track lessons never reach this code path —
+# the route keeps them out of the candidates, and they stay "common".
+
+CATEGORIZE_BATCH_SIZE = 25
+CATEGORIZE_SAMPLE_ITEMS = 6
+
+AUTO_CATEGORIZE_SYSTEM_PROMPT = """You classify English lessons for Greek seafarers by who on board they are for.
+
+Categories:
+- "engineer": engine room, machinery, engine orders, fuel/lubrication, technical maintenance.
+- "deck": bridge, navigation, radar, helm/steering, mooring, cargo work on deck.
+- "common": for everyone — safety, emergencies, general communication, SMCP basics, general vocabulary.
+
+You receive a JSON array of lessons: {"lesson_id": "...", "title": "...", "samples": ["<item text>", ...]}.
+
+OUTPUT: ONLY a valid JSON array, one entry per input lesson, no prose:
+[{"lesson_id": "...", "role_category": "engineer" | "deck" | "common"}]"""
+
+
+def lesson_category_samples(items, max_items=CATEGORIZE_SAMPLE_ITEMS):
+    """A few representative item texts for the categorizer."""
+    samples = []
+    for item in items:
+        english = (item.data or {}).get("english") or {}
+        text = english.get("text") or english.get("scenario") or ""
+        if text:
+            samples.append(text[:120])
+        if len(samples) >= max_items:
+            break
+    return samples
+
+
+def auto_categorize_lessons(lessons_payload):
+    """Classify lessons in batches; returns {lesson_id: role_category}.
+
+    `lessons_payload` is a list of {"lesson_id", "title", "samples"} dicts.
+    Entries the model skips or answers invalidly are simply absent from the
+    result (the caller leaves those lessons unchanged).
+    """
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        logger.error("ANTHROPIC_API_KEY is not set; categorization unavailable.")
+        raise AdminGenError("Item generation is not configured on the server.", 503)
+    try:
+        import anthropic
+    except ImportError as exc:  # pragma: no cover - dependency missing
+        logger.exception("anthropic SDK failed to import.")
+        raise AdminGenError("Item generation is not available on the server.", 503) from exc
+
+    client = anthropic.Anthropic()
+    result = {}
+    for start in range(0, len(lessons_payload), CATEGORIZE_BATCH_SIZE):
+        batch = lessons_payload[start : start + CATEGORIZE_BATCH_SIZE]
+        try:
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=2000,
+                system=AUTO_CATEGORIZE_SYSTEM_PROMPT,
+                messages=[
+                    {"role": "user", "content": json.dumps(batch, ensure_ascii=False)}
+                ],
+                output_config={"effort": "medium"},
+            )
+        except anthropic.APIError as exc:
+            logger.warning("Anthropic call failed for a categorize batch: %s", exc)
+            continue  # other batches may still succeed
+
+        text = "".join(b.text for b in response.content if b.type == "text")
+        try:
+            rows = _parse_json_array(text)
+        except AdminGenError:
+            logger.warning("Categorize batch returned unparseable output — skipping.")
+            continue
+        for row in rows:
+            category = (row.get("role_category") or "").strip().lower()
+            if row.get("lesson_id") and category in ALLOWED_ROLE_CATEGORIES:
+                result[row["lesson_id"]] = category
+
+    if not result:
+        raise AdminGenError("Η αυτόματη ταξινόμηση απέτυχε. Δοκίμασε ξανά.", 502)
+    return result
+
+
 # --- Teaching backfill for existing lessons -----------------------------------
 #
 # Older lessons were created before the "teaching" type existed. The admin can

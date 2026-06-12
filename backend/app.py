@@ -13,9 +13,11 @@ from admin import (
     ALLOWED_SKILL_TYPES,
     ALLOWED_TRACKS,
     AdminGenError,
+    auto_categorize_lessons,
     extract_text_from_pdf,
     generate_lessons,
     generate_teaching_for_lesson,
+    lesson_category_samples,
     lesson_digest,
 )
 from adaptive import choose_next, choose_next_lesson
@@ -1027,6 +1029,95 @@ def admin_draft_lessons():
         # Draft lessons first, then existing lessons that have draft items.
         lessons_payload.sort(key=lambda l: (l["existing"], l["title"] or ""))
         return jsonify({"lessons": lessons_payload, "ungrouped": ungrouped})
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/auto-categorize", methods=["POST"])
+def admin_auto_categorize():
+    """Classify unclassified approved lessons into engineer/deck/common.
+
+    Candidates are approved lessons still on the default "common" category,
+    excluding grammar-track lessons (those are ALWAYS common and never sent
+    to the model). Only role_category changes — items are untouched. The
+    admin can still override any result with the existing dropdowns.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        candidates = (
+            session.query(Lesson)
+            .filter(
+                Lesson.status == "approved",
+                Lesson.track != "grammar",
+                (Lesson.role_category == "common") | (Lesson.role_category.is_(None)),
+            )
+            .order_by(Lesson.lesson_id)
+            .all()
+        )
+        if not candidates:
+            return jsonify(
+                {
+                    "checked": 0,
+                    "updated": 0,
+                    "counts": {},
+                    "results": [],
+                    "message": "Δεν υπάρχουν μαθήματα για ταξινόμηση.",
+                }
+            )
+
+        items_by_lesson = {}
+        for item, _track in _approved_items_with_track(session):
+            items_by_lesson.setdefault(item.lesson_id, []).append(item)
+
+        payload = [
+            {
+                "lesson_id": lesson.lesson_id,
+                "title": lesson.title,
+                "samples": lesson_category_samples(
+                    items_by_lesson.get(lesson.lesson_id, [])
+                ),
+            }
+            for lesson in candidates
+        ]
+        try:
+            categories = auto_categorize_lessons(payload)
+        except AdminGenError as exc:
+            return jsonify({"error": str(exc)}), exc.status_code
+
+        updated = 0
+        counts = {}
+        results = []
+        for lesson in candidates:
+            category = categories.get(lesson.lesson_id)
+            if category is None:
+                continue  # the model skipped it — leave unchanged
+            if category != (lesson.role_category or "common"):
+                lesson.role_category = category
+                updated += 1
+            counts[category] = counts.get(category, 0) + 1
+            results.append(
+                {
+                    "lesson_id": lesson.lesson_id,
+                    "title": lesson.title,
+                    "role_category": category,
+                }
+            )
+        session.commit()
+        logger.info(
+            "Auto-categorized %d lesson(s), %d changed: %s", len(results), updated, counts
+        )
+        return jsonify(
+            {"checked": len(results), "updated": updated, "counts": counts, "results": results}
+        )
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Auto-categorize failed")
+        return jsonify({"error": "Internal error."}), 500
     finally:
         session.close()
 
