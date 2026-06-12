@@ -18,6 +18,13 @@ from admin import (
 from auth import AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
 from models import Item, Lesson, UserLessonCompletion, UserProgress
+from placement import (
+    grade_answer,
+    score_grammar,
+    score_maritime,
+    section_for_track,
+    select_questions,
+)
 from pronunciation import PronunciationError, assess_pronunciation
 from roleplay import RoleplayError, chat as roleplay_chat
 from transcription import transcribe
@@ -126,6 +133,9 @@ def serialize_progress(session, progress):
         else None,
         "completed_lesson_ids": completed_ids,
         "lessons_completed": len(completed_ids),
+        # Placement results; null until the user takes the placement test.
+        "cefr_level": progress.cefr_level,
+        "maritime_level": progress.maritime_level,
     }
 
 
@@ -350,6 +360,132 @@ def complete_lesson(lesson_id):
     except Exception:  # pragma: no cover - unexpected failure
         session.rollback()
         logger.exception("Completing lesson failed")
+        return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+# --- Placement test ----------------------------------------------------------
+
+
+def _approved_items_with_track(session, item_ids=None):
+    """(Item, lesson_track) pairs for approved items in approved lessons."""
+    query = (
+        session.query(Item, Lesson.track)
+        .join(Lesson, Item.lesson_id == Lesson.lesson_id)
+        .filter(Item.status == "approved", Lesson.status == "approved")
+    )
+    if item_ids is not None:
+        query = query.filter(Item.item_id.in_(item_ids))
+    return query.all()
+
+
+@app.route("/api/placement/questions", methods=["GET"])
+def placement_questions():
+    """A balanced ~10-question placement test drawn from approved items."""
+    session = SessionLocal()
+    try:
+        rows = _approved_items_with_track(session)
+        return jsonify({"questions": select_questions(rows)})
+    except Exception:  # pragma: no cover - unexpected failure
+        logger.exception("Building placement questions failed")
+        return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/placement/submit", methods=["POST"])
+def placement_submit():
+    """Grade placement answers, store cefr_level + maritime_level, return both.
+
+    Body: {"answers": [{"item_id": "...", "answer": <string or list>}, ...]}
+    """
+    try:
+        user_id, email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    payload = request.get_json(silent=True) or {}
+    answers = payload.get("answers")
+    if not isinstance(answers, list) or not answers:
+        return jsonify({"error": "Body must include a non-empty 'answers' list."}), 400
+
+    session = SessionLocal()
+    try:
+        item_ids = {
+            a.get("item_id") for a in answers if isinstance(a, dict) and a.get("item_id")
+        }
+        by_id = {
+            item.item_id: (item, track)
+            for item, track in _approved_items_with_track(session, item_ids)
+        }
+
+        grammar_results = []  # (difficulty, is_correct)
+        maritime_results = []  # is_correct
+        details = []
+        graded = set()
+        for entry in answers:
+            if not isinstance(entry, dict):
+                continue
+            item_id = entry.get("item_id")
+            if item_id in graded:  # ignore duplicate answers for the same item
+                continue
+            found = by_id.get(item_id)
+            if found is None:  # unknown/unapproved item — skip, don't fail
+                continue
+            graded.add(item_id)
+            item, track = found
+            correct, expected = grade_answer(item, entry.get("answer"))
+            section = section_for_track(track)
+            if section == "grammar":
+                grammar_results.append((item.difficulty, correct))
+            else:
+                maritime_results.append(correct)
+            details.append(
+                {
+                    "item_id": item_id,
+                    "section": section,
+                    "difficulty": item.difficulty,
+                    "correct": correct,
+                    "correct_answer": expected,
+                }
+            )
+
+        if not details:
+            return jsonify({"error": "No gradable answers were submitted."}), 400
+
+        cefr_level, grammar_breakdown = score_grammar(grammar_results)
+        maritime_level, maritime_percent = score_maritime(maritime_results)
+
+        progress = get_or_create_progress(session, user_id, email)
+        # Only overwrite a result the test actually measured (e.g. a maritime-only
+        # retake must not wipe an existing cefr_level).
+        if cefr_level is not None:
+            progress.cefr_level = cefr_level
+        if maritime_level is not None:
+            progress.maritime_level = maritime_level
+        session.commit()
+
+        return jsonify(
+            {
+                "cefr_level": progress.cefr_level,
+                "maritime_level": progress.maritime_level,
+                "grammar": {
+                    "answered": len(grammar_results),
+                    "correct": sum(ok for _, ok in grammar_results),
+                    "by_level": grammar_breakdown,
+                },
+                "maritime": {
+                    "answered": len(maritime_results),
+                    "correct": sum(maritime_results),
+                    "percent_correct": maritime_percent,
+                },
+                "results": details,
+            }
+        )
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Placement submit failed")
         return jsonify({"error": "Internal error."}), 500
     finally:
         session.close()
