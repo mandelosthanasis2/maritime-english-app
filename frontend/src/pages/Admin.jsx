@@ -8,6 +8,7 @@ import {
   adminEditItem,
   adminEditLesson,
   adminGenerateItems,
+  adminGenerateTeaching,
   fetchLessons,
 } from '../api.js'
 
@@ -299,6 +300,75 @@ function LessonGroup({ group, moveTargets, onError, reload }) {
   )
 }
 
+// Backfill: add a teaching concept card to lessons created before the
+// "teaching" type existed. Generation stores DRAFTS that show up in the
+// review area below for editing/approval — nothing goes live directly.
+function TeachingBackfill({ lessons, reload }) {
+  const [busyId, setBusyId] = useState(null)
+  const [notes, setNotes] = useState({}) // lesson_id -> status message
+
+  async function generate(lessonId) {
+    setBusyId(lessonId)
+    setNotes((n) => ({ ...n, [lessonId]: null }))
+    try {
+      await adminGenerateTeaching(lessonId)
+      setNotes((n) => ({
+        ...n,
+        [lessonId]: '✓ Δημιουργήθηκε ως draft — έλεγξέ το στα «Προτεινόμενα μαθήματα» παρακάτω.',
+      }))
+      reload()
+    } catch (err) {
+      setNotes((n) => ({ ...n, [lessonId]: err.message }))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  if (lessons.length === 0) return null
+
+  return (
+    <section className="admin-panel">
+      <h2 className="admin-panel__title">Διδασκαλία σε υπάρχοντα μαθήματα ({lessons.length})</h2>
+      <p className="admin-hint">
+        Για μαθήματα που φτιάχτηκαν πριν υπάρξει η διδασκαλία: δημιουργεί 1-2 teaching
+        items στην αρχή του μαθήματος, ως drafts για έλεγχο πριν την έγκριση.
+      </p>
+      <div className="admin-teach-list">
+        {lessons.map((lesson) => (
+          <div key={lesson.lesson_id} className="admin-teach-row">
+            <div className="admin-teach-row__info">
+              <span className={`badge badge--track badge--track-${lesson.track === 'grammar' ? 'grammar' : 'maritime'}`}>
+                {TRACK_LABEL[lesson.track] || lesson.track}
+              </span>
+              <span className="admin-teach-row__title">{lesson.title}</span>
+              <span className="admin-card__id">
+                {lesson.item_count} {lesson.item_count === 1 ? 'item' : 'items'}
+              </span>
+            </div>
+            {notes[lesson.lesson_id] && (
+              <p className="admin-teach-row__note">{notes[lesson.lesson_id]}</p>
+            )}
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost"
+              onClick={() => generate(lesson.lesson_id)}
+              disabled={busyId !== null}
+            >
+              {busyId === lesson.lesson_id ? (
+                <>
+                  <span className="pa-spinner" aria-hidden="true" /> Δημιουργία…
+                </>
+              ) : (
+                '➕ Πρόσθεσε διδασκαλία'
+              )}
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export default function Admin() {
   const navigate = useNavigate()
 
@@ -434,6 +504,8 @@ export default function Admin() {
       </section>
 
       {error && <p className="admin-error">{error}</p>}
+
+      <TeachingBackfill lessons={approvedLessons} reload={() => load()} />
 
       <section className="admin-panel">
         <h2 className="admin-panel__title">Προτεινόμενα μαθήματα ({groups.length})</h2>

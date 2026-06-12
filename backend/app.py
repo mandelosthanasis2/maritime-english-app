@@ -14,6 +14,8 @@ from admin import (
     AdminGenError,
     extract_text_from_pdf,
     generate_lessons,
+    generate_teaching_for_lesson,
+    lesson_digest,
 )
 from adaptive import choose_next, choose_next_lesson
 from auth import AuthError, verify_admin, verify_request
@@ -1021,6 +1023,85 @@ def admin_draft_lessons():
         # Draft lessons first, then existing lessons that have draft items.
         lessons_payload.sort(key=lambda l: (l["existing"], l["title"] or ""))
         return jsonify({"lessons": lessons_payload, "ungrouped": ungrouped})
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/lessons/<lesson_id>/generate-teaching", methods=["POST"])
+def admin_generate_teaching(lesson_id):
+    """Backfill: generate 1-2 DRAFT teaching items for an existing lesson.
+
+    The cards are generated from the lesson's own items, stored as drafts with
+    order_index BEFORE the existing items, and reviewed/approved like any other
+    generated content. Existing items are never touched.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
+        if lesson is None:
+            return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
+
+        # Never stack a second explanation: drafts awaiting review count too.
+        has_teaching = (
+            session.query(Item)
+            .filter(
+                Item.lesson_id == lesson_id,
+                (Item.skill_type == "teaching") | (Item.type == "teaching"),
+            )
+            .count()
+        )
+        if has_teaching:
+            return (
+                jsonify(
+                    {"error": "Το μάθημα έχει ήδη διδασκαλία (ή draft που περιμένει έγκριση)."}
+                ),
+                409,
+            )
+
+        items = (
+            session.query(Item)
+            .filter_by(lesson_id=lesson_id, status="approved")
+            .order_by(Item.order_index)
+            .all()
+        )
+        if not items:
+            return jsonify({"error": "Το μάθημα δεν έχει approved items ακόμη."}), 400
+
+        track = "grammar" if lesson.track == "grammar" else "maritime"
+        try:
+            raws = generate_teaching_for_lesson(lesson.title, track, lesson_digest(items))
+        except AdminGenError as exc:
+            return jsonify({"error": str(exc)}), exc.status_code
+
+        # Place the cards BEFORE everything that exists (negative indexes are
+        # fine — items are served ordered by order_index).
+        min_order = min((i.order_index or 0) for i in items)
+        fallback_difficulty = items[0].difficulty or "B1"
+        stored = []
+        for offset, raw in enumerate(raws):
+            stored.append(
+                store_generated_item(
+                    session,
+                    raw,
+                    lesson_id,
+                    track,
+                    fallback_difficulty,
+                    min_order - len(raws) + offset,
+                )
+            )
+        session.commit()
+        return jsonify(
+            {"lesson_id": lesson_id, "items": [serialize_admin_item(i) for i in stored]}
+        )
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Teaching backfill failed")
+        return jsonify({"error": "Internal error."}), 500
     finally:
         session.close()
 

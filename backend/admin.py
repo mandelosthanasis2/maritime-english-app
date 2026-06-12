@@ -398,3 +398,109 @@ def generate_lessons(source_text, kind, existing_lessons=None):
         failures,
     )
     return proposed
+
+
+# --- Teaching backfill for existing lessons -----------------------------------
+#
+# Older lessons were created before the "teaching" type existed. The admin can
+# ask for 1-2 teaching concept cards to be generated FROM the lesson's own
+# items, reviewed as drafts, and approved like any other generated content.
+
+MAX_TEACHING_ITEMS = 2
+DIGEST_MAX_ITEMS = 40
+DIGEST_NOTE_CHARS = 200
+
+TEACHING_SYSTEM_PROMPT = """You write Greek "teaching" concept cards for an EXISTING English lesson for Greek learners. A teaching card is the explanation a teacher gives BEFORE the exercises: reading material, no answer.
+
+You receive the lesson's title, its track, and a digest of its existing items. From THAT content (not invented topics), produce 1-2 teaching items that explain the lesson's concept:
+- track "grammar": explain the grammar rule the lesson practises — what it is, when and how it is used.
+- track "maritime": explain the terminology/procedure and how it is used on board (IMO SMCP / shipboard practice).
+
+OUTPUT: ONLY a valid JSON array of 1-2 item objects, no markdown or prose:
+{
+  "type": "teaching",
+  "skill_type": "teaching",
+  "level": CEFR band "A1|A2|B1|B2|C1" (match the lesson's level),
+  "difficulty": same band,
+  "ship_types": ["all"],
+  "english": { "text": "<short English title of the concept>" },
+  "explanations": { "el": {
+      "translation": "<short Greek title>",
+      "note": "<the mini-lesson the learner reads: a DETAILED Greek explanation — τι είναι, πότε και πώς χρησιμοποιείται — written simply for a Greek learner>",
+      "examples": [ { "en": "<English example>", "el": "<Greek translation>" } ]  // 2-3 entries, drawn from or consistent with the lesson's content
+  } },
+  "pronunciation_focus": [],
+  "tags": [<short lowercase strings>]
+}
+
+RULES
+- All explanations.el text MUST be in Greek; english.text is a short English title.
+- Use the lesson's actual phrases/terms in the examples where possible.
+- Do NOT invent "audio_url" or "id" fields.
+- Output ONLY the JSON array."""
+
+
+def lesson_digest(items, max_items=DIGEST_MAX_ITEMS):
+    """A compact text digest of a lesson's items for the teaching generator."""
+    lines = []
+    for item in items[:max_items]:
+        data = item.data or {}
+        english = data.get("english") or {}
+        el = (data.get("explanations") or {}).get("el") or {}
+        text = english.get("text") or english.get("scenario") or ""
+        line = f"- [{item.skill_type or item.type} | {item.difficulty}] {text}"
+        if el.get("translation"):
+            line += f" | μετάφραση: {el['translation']}"
+        if el.get("note"):
+            line += f" | σημείωση: {el['note'][:DIGEST_NOTE_CHARS]}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def generate_teaching_for_lesson(title, track, digest):
+    """Ask Claude for 1-2 teaching items for an existing lesson; returns raw dicts."""
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        logger.error("ANTHROPIC_API_KEY is not set; generation unavailable.")
+        raise AdminGenError("Item generation is not configured on the server.", 503)
+    try:
+        import anthropic
+    except ImportError as exc:  # pragma: no cover - dependency missing
+        logger.exception("anthropic SDK failed to import.")
+        raise AdminGenError("Item generation is not available on the server.", 503) from exc
+
+    user_prompt = (
+        f'LESSON TITLE: "{title}"\n'
+        f"TRACK: {track}\n\n"
+        "EXISTING ITEMS (digest):\n"
+        f"{digest}\n\n"
+        "Produce the 1-2 teaching items as a JSON array."
+    )
+    client = anthropic.Anthropic()
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=4000,
+            system=TEACHING_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            output_config={"effort": "medium"},
+        )
+    except anthropic.APIError as exc:
+        logger.warning("Anthropic call failed for teaching backfill: %s", exc)
+        raise AdminGenError("The generator is unavailable right now.", 502) from exc
+
+    text = "".join(b.text for b in response.content if b.type == "text")
+    raws = _parse_json_array(text)
+
+    teaching = []
+    for raw in raws[:MAX_TEACHING_ITEMS]:
+        # Force the type fields so a drifting model response can't store a
+        # non-teaching item through this endpoint.
+        raw["type"] = "teaching"
+        raw["skill_type"] = "teaching"
+        el = (raw.get("explanations") or {}).get("el") or {}
+        if raw.get("english", {}).get("text") and el.get("note"):
+            teaching.append(raw)
+    if not teaching:
+        raise AdminGenError("Ο generator δεν επέστρεψε έγκυρα teaching items. Δοκίμασε ξανά.", 502)
+    return teaching
