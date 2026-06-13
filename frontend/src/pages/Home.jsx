@@ -188,6 +188,35 @@ function ComingSoon() {
   )
 }
 
+// Shared empty/error state — one friendly pattern across the app.
+function EmptyState({ message, detail }) {
+  return (
+    <div className="empty-state">
+      <span className="empty-state__icon" aria-hidden="true">🌊</span>
+      <p className="empty-state__msg">{message}</p>
+      {detail && <p className="empty-state__detail">{detail}</p>}
+    </div>
+  )
+}
+
+// Placeholder shown while the lesson groups load — the shape of the content
+// "breathing" instead of a bare spinner (kinder on a slow ship connection).
+function LessonsSkeleton() {
+  return (
+    <section className="home-section" aria-hidden="true">
+      <div className="sk-head">
+        <span className="skeleton sk-icon" />
+        <span className="skeleton sk-line sk-line--title" />
+      </div>
+      <div className="lesson-list">
+        <span className="skeleton sk-card" />
+        <span className="skeleton sk-card" />
+      </div>
+      <span className="sr-only">Φόρτωση μαθημάτων…</span>
+    </section>
+  )
+}
+
 // The teacher's recommendation: the adaptive engine picks the user's next
 // whole lesson and explains why in Greek. Primary call-to-action on the home
 // screen; refetched on every mount, so finishing a lesson and returning home
@@ -218,9 +247,12 @@ function NextLessonCard() {
 
   if (state === 'loading') {
     return (
-      <div className="next-card next-card--state">
-        <span className="pa-spinner" aria-hidden="true" />
-        <span>Επιλογή του επόμενου μαθήματος…</span>
+      <div className="next-card next-card--skeleton" aria-hidden="true">
+        <span className="skeleton sk-line sk-line--kicker" />
+        <span className="skeleton sk-line sk-line--head" />
+        <span className="skeleton sk-line sk-line--text" />
+        <span className="skeleton sk-btn" />
+        <span className="sr-only">Επιλογή του επόμενου μαθήματος…</span>
       </div>
     )
   }
@@ -327,28 +359,17 @@ function Home() {
         loading={progressLoading}
       />
 
-      {status === 'loading' && (
-        <section className="home-section">
-          <h2 className="home-section__title">Τα μαθήματά σου</h2>
-          <p className="state state--loading">Φόρτωση μαθημάτων…</p>
-        </section>
-      )}
+      {status === 'loading' && <LessonsSkeleton />}
 
       {status === 'error' && (
-        <section className="home-section">
-          <h2 className="home-section__title">Τα μαθήματά σου</h2>
-          <div className="state state--error">
-            <p>Δεν ήταν δυνατή η φόρτωση των μαθημάτων.</p>
-            <p className="state__detail">{error}</p>
-          </div>
-        </section>
+        <EmptyState
+          message="Δεν ήταν δυνατή η φόρτωση των μαθημάτων."
+          detail={error}
+        />
       )}
 
       {status === 'ready' && lessons.length === 0 && (
-        <section className="home-section">
-          <h2 className="home-section__title">Τα μαθήματά σου</h2>
-          <p className="state">Δεν υπάρχουν μαθήματα ακόμη.</p>
-        </section>
+        <EmptyState message="Δεν υπάρχουν μαθήματα ακόμη." />
       )}
 
       {status === 'ready' &&

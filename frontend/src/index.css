@@ -642,31 +642,9 @@ h3 {
   transform: scale(0.97);
 }
 
-.pa-record--active {
-  background: var(--wrong-bg);
-  color: var(--wrong);
-}
-
-.pa-pulse {
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 50%;
-  background: var(--wrong);
-  animation: pulse 1s ease-in-out infinite;
-}
-
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(1.35); }
-}
-
-.pa-assessing {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  color: var(--ink-soft);
-  font-size: 0.95rem;
-  font-weight: 600;
 }
 
 .pa-spinner {
@@ -1436,96 +1414,6 @@ h3 {
   gap: 1.6rem;
 }
 
-/* Hero */
-.home-hero {
-  position: relative;
-  overflow: hidden;
-  background: var(--grad-header);
-  color: #fff;
-  border-radius: var(--r-xl);
-  padding: 1.6rem 1.4rem 2.2rem;
-  box-shadow: var(--sh-md);
-}
-
-.home-hero__content {
-  position: relative;
-  z-index: 1;
-  max-width: 80%;
-}
-
-.home-hero__greeting {
-  margin: 0;
-  font-size: 1.55rem;
-  line-height: 1.2;
-  color: #fff;
-}
-
-.home-hero__subtitle {
-  margin: 0.5rem 0 0;
-  font-size: 0.98rem;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.86);
-}
-
-.home-hero__compass {
-  position: absolute;
-  top: -16px;
-  right: -16px;
-  width: 130px;
-  height: 130px;
-  color: #7fe7df;
-  opacity: 0.28;
-  z-index: 0;
-}
-
-.home-hero__waves {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  width: 100%;
-  height: 38px;
-  color: var(--bg);
-  display: block;
-}
-
-/* Stats row */
-.stats-row {
-  display: flex;
-  gap: 0.7rem;
-}
-
-.stat-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.1rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: 0.9rem 0.4rem;
-  box-shadow: var(--sh-sm);
-  text-align: center;
-}
-
-.stat-card__icon {
-  font-size: 1.3rem;
-  line-height: 1;
-}
-
-.stat-card__value {
-  font-family: var(--font-head);
-  font-size: 1.3rem;
-  font-weight: 600;
-  color: var(--heading);
-}
-
-.stat-card__label {
-  font-size: 0.72rem;
-  color: var(--ink-faint);
-}
-
 /* Sections */
 .home-section {
   display: flex;
@@ -1570,47 +1458,6 @@ h3 {
   background: var(--grad-progress);
   border-radius: var(--r-pill);
   transition: width 0.4s ease;
-}
-
-/* Coming-soon teaser (locked placeholders) */
-.soon-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.7rem;
-}
-
-.soon-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  background: #eef3f5;
-  border: 1px dashed #cdd9dd;
-  border-radius: var(--r-lg);
-  padding: 1.1rem 0.5rem;
-  color: var(--ink-faint);
-  filter: grayscale(0.4);
-}
-
-.soon-card__icon {
-  font-size: 1.6rem;
-  line-height: 1;
-  opacity: 0.7;
-}
-
-.soon-card__label {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--ink-soft);
-}
-
-.soon-card__lock {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.55rem;
-  font-size: 0.8rem;
-  opacity: 0.6;
 }
 
 /* ============================================================
@@ -3106,34 +2953,6 @@ textarea {
   text-align: center;
 }
 
-/* Stats: one compact strip instead of three crowded cards. */
-.stats-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  box-shadow: var(--sh-sm);
-  padding: 0.6rem var(--sp-4);
-  font-size: 0.88rem;
-  color: var(--ink-soft);
-}
-
-.stats-strip__item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.3rem;
-  white-space: nowrap;
-}
-
-.stats-strip__item b {
-  font-family: var(--font-head);
-  font-size: 1rem;
-  color: var(--heading);
-}
-
 /* Lesson group sections: clear titles, generous separation. */
 .home-section {
   margin-top: var(--sp-4);
@@ -3291,11 +3110,6 @@ textarea {
   background: rgba(255, 255, 255, 0.07);
 }
 
-.soon-card {
-  background: var(--surface);
-  border-color: var(--border);
-}
-
 .admin-item {
   background: var(--surface-2);
 }
@@ -3339,9 +3153,8 @@ textarea {
 }
 
 .lesson-card,
-.role-card,
-.stats-strip,
-.placement-result {
+  .role-card,
+  .placement-result {
   border-color: var(--border);
 }
 
@@ -3818,4 +3631,103 @@ textarea {
 /* Placement result panel reveals as one piece. */
 .placement-result {
   animation: card-rise var(--t-page) both;
+}
+
+/* ============================================================
+   Skeletons & empty states (UI/UX step 8)
+   ============================================================ */
+
+/* Visually hidden but available to screen readers (skeletons are aria-hidden). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Shimmering placeholder block. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  to { transform: translateX(100%); }
+}
+
+/* Recommendation-card skeleton: same silhouette, neutral surface. */
+.next-card--skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  background: var(--surface);
+}
+
+.sk-line { height: 0.9rem; border-radius: var(--r-sm); }
+.sk-line--kicker { width: 45%; height: 0.7rem; }
+.sk-line--head { width: 75%; height: 1.4rem; }
+.sk-line--text { width: 92%; }
+.sk-line--title { width: 55%; height: 1.1rem; }
+.sk-btn { width: 60%; height: var(--tap-cta); border-radius: var(--r-pill); margin-top: var(--sp-2); }
+
+.sk-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.sk-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--r-md);
+}
+
+.sk-card {
+  height: 96px;
+  border-radius: var(--r-lg);
+}
+
+/* Unified empty / error state. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  text-align: center;
+  padding: var(--sp-6) var(--sp-4);
+  color: var(--ink-soft);
+}
+
+.empty-state__icon {
+  font-size: 2.2rem;
+}
+
+.empty-state__msg {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.empty-state__detail {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-faint);
 }
