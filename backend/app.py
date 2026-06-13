@@ -13,8 +13,10 @@ from admin import (
     ALLOWED_SKILL_TYPES,
     ALLOWED_TRACKS,
     AdminGenError,
+    analyze_lesson_gaps,
     auto_categorize_lessons,
     extract_text_from_pdf,
+    generate_enrichment_items,
     generate_lessons,
     generate_teaching_for_lesson,
     lesson_category_samples,
@@ -1225,6 +1227,90 @@ def admin_generate_teaching(lesson_id):
     except Exception:  # pragma: no cover - unexpected failure
         session.rollback()
         logger.exception("Teaching backfill failed")
+        return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/lessons/<lesson_id>/enrich", methods=["POST"])
+def admin_enrich_lesson(lesson_id):
+    """Bring a small/incomplete lesson up to standard by generating ONLY the
+    items it is missing (a speaking item, a closing roleplay, and enough varied
+    exercises to reach 8-12), grounded in its own content. The new items are
+    stored as DRAFTS after the existing ones; existing items are never touched.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
+        if lesson is None:
+            return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
+
+        # Don't pile new drafts on top of drafts still awaiting review.
+        pending = (
+            session.query(Item)
+            .filter(Item.lesson_id == lesson_id, Item.status == "draft")
+            .count()
+        )
+        if pending:
+            return (
+                jsonify(
+                    {"error": "Υπάρχουν ήδη drafts σε αναμονή — έλεγξέ τα/ενέκρινέ τα πρώτα."}
+                ),
+                409,
+            )
+
+        items = (
+            session.query(Item)
+            .filter_by(lesson_id=lesson_id, status="approved")
+            .order_by(Item.order_index)
+            .all()
+        )
+        if not items:
+            return jsonify({"error": "Το μάθημα δεν έχει approved items ακόμη."}), 400
+
+        gaps = analyze_lesson_gaps(items)
+        if not gaps["needed"]:
+            # Already complete — friendly 200 (not an error) so the UI can say so.
+            return jsonify(
+                {
+                    "lesson_id": lesson_id,
+                    "items": [],
+                    "message": "Το μάθημα είναι ήδη πλήρες (8+ items, με speaking και roleplay).",
+                }
+            )
+
+        track = "grammar" if lesson.track == "grammar" else "maritime"
+        role_category = lesson.role_category or "common"
+        try:
+            raws = generate_enrichment_items(
+                lesson.title, track, role_category, lesson_digest(items), gaps["needed"]
+            )
+        except AdminGenError as exc:
+            return jsonify({"error": str(exc)}), exc.status_code
+
+        # Append after the existing items, preserving the generated (pedagogical)
+        # order. Existing items keep their order_index untouched.
+        base = max((i.order_index or 0) for i in items)
+        fallback_difficulty = items[-1].difficulty or "B1"
+        stored = []
+        for offset, raw in enumerate(raws, start=1):
+            stored.append(
+                store_generated_item(
+                    session, raw, lesson_id, track, fallback_difficulty, base + offset
+                )
+            )
+        session.commit()
+        return jsonify(
+            {"lesson_id": lesson_id, "items": [serialize_admin_item(i) for i in stored]}
+        )
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Lesson enrichment failed")
         return jsonify({"error": "Internal error."}), 500
     finally:
         session.close()
