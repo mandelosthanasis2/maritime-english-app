@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchLessons, fetchMyProgress, fetchNextLesson } from '../api.js'
+import useCountUp from '../useCountUp.js'
 
 // Metadata for rendering a small track badge on each lesson card.
 const TRACK_META = {
@@ -58,32 +59,6 @@ const COMING_SOON = [
   { key: 'cargo', icon: '📦', label: 'Cargo' },
   { key: 'safety', icon: '🦺', label: 'Safety' },
 ]
-
-// Count a number up from 0 to `target` once it's ready. Presentation only —
-// honours prefers-reduced-motion (then it just shows the final value).
-function useCountUp(target, run) {
-  const [value, setValue] = useState(0)
-  useEffect(() => {
-    if (!run) return undefined
-    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    if (reduce || target <= 0) {
-      setValue(target)
-      return undefined
-    }
-    let raf
-    const duration = 750
-    const start = performance.now()
-    const tick = (now) => {
-      const t = Math.min(1, (now - start) / duration)
-      const eased = 1 - (1 - t) ** 3 // ease-out cubic
-      setValue(Math.round(target * eased))
-      if (t < 1) raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [target, run])
-  return value
-}
 
 // One-line greeting — the recommendation card right below is the real hero.
 function Greeting() {
