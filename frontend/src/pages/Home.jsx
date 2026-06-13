@@ -13,10 +13,33 @@ const TRACK_META = {
 // The lesson list is organised by who the lesson is for. Unknown/missing
 // categories fall back to "common" so nothing ever disappears from the home.
 const ROLE_GROUPS = [
-  { key: 'engineer', icon: '⚙️', title: 'Για Μηχανικούς' },
-  { key: 'deck', icon: '🧭', title: 'Για Αξιωματικούς Καταστρώματος' },
-  { key: 'common', icon: '🤝', title: 'Κοινά για όλους' },
+  { key: 'engineer', icon: '⚙️', kicker: 'Μηχανοστάσιο', title: 'Για Μηχανικούς' },
+  { key: 'deck', icon: '🧭', kicker: 'Γέφυρα & Κατάστρωμα', title: 'Για Αξιωματικούς Καταστρώματος' },
+  { key: 'common', icon: '🤝', kicker: 'Βασικά', title: 'Κοινά για όλους' },
 ]
+
+// Naval ranks earned purely from existing XP — no backend involved. The user
+// climbs as their total XP crosses each threshold.
+const RANKS = [
+  { name: 'Δόκιμος', min: 0, icon: '🪢' },
+  { name: 'Ναύτης', min: 100, icon: '⚓' },
+  { name: 'Ανθυποπλοίαρχος', min: 300, icon: '🧭' },
+  { name: 'Υποπλοίαρχος', min: 600, icon: '🎖️' },
+  { name: 'Πλοίαρχος', min: 1000, icon: '👑' },
+]
+
+function rankForXp(xp) {
+  let index = 0
+  for (let i = 0; i < RANKS.length; i += 1) {
+    if (xp >= RANKS[i].min) index = i
+  }
+  const rank = RANKS[index]
+  const next = RANKS[index + 1] || null
+  const fraction = next
+    ? Math.min(1, Math.max(0, (xp - rank.min) / (next.min - rank.min)))
+    : 1
+  return { rank, next, fraction }
+}
 
 // Group order adapts to the user's role: their own group first, then the
 // common lessons, then the rest. Undecided/unknown keeps the default order.
@@ -36,6 +59,32 @@ const COMING_SOON = [
   { key: 'safety', icon: '🦺', label: 'Safety' },
 ]
 
+// Count a number up from 0 to `target` once it's ready. Presentation only —
+// honours prefers-reduced-motion (then it just shows the final value).
+function useCountUp(target, run) {
+  const [value, setValue] = useState(0)
+  useEffect(() => {
+    if (!run) return undefined
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduce || target <= 0) {
+      setValue(target)
+      return undefined
+    }
+    let raf
+    const duration = 750
+    const start = performance.now()
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration)
+      const eased = 1 - (1 - t) ** 3 // ease-out cubic
+      setValue(Math.round(target * eased))
+      if (t < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [target, run])
+  return value
+}
+
 // One-line greeting — the recommendation card right below is the real hero.
 function Greeting() {
   return (
@@ -46,22 +95,72 @@ function Greeting() {
   )
 }
 
-// Compact one-row strip: streak / XP / lessons. Replaces the three cards
-// that crowded a 375px screen.
-function StatsStrip({ streak, xp, completed, total, loading }) {
-  const dash = loading ? '…' : null
-  const stats = [
-    { icon: '🔥', value: dash ?? String(streak), label: 'σερί' },
-    { icon: '⭐', value: dash ?? String(xp), label: 'XP' },
-    { icon: '✅', value: dash ?? `${completed}/${total}`, label: 'μαθήματα' },
+// Naval rank with a progress ring toward the next rank. The ring fills from
+// empty on mount (transition; disabled under reduced-motion).
+function RankCard({ xp, loading }) {
+  const { rank, next, fraction } = rankForXp(xp)
+  const shownXp = useCountUp(xp, !loading)
+  const [ringFraction, setRingFraction] = useState(0)
+
+  useEffect(() => {
+    if (loading) return undefined
+    const id = requestAnimationFrame(() => setRingFraction(fraction))
+    return () => cancelAnimationFrame(id)
+  }, [fraction, loading])
+
+  const radius = 26
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference * (1 - ringFraction)
+  const xpToNext = next ? Math.max(0, next.min - xp) : 0
+
+  return (
+    <div className="rank-card">
+      <div className="rank-ring">
+        <svg viewBox="0 0 64 64" className="rank-ring__svg" aria-hidden="true">
+          <circle className="rank-ring__track" cx="32" cy="32" r={radius} />
+          <circle
+            className="rank-ring__fill"
+            cx="32"
+            cy="32"
+            r={radius}
+            style={{ strokeDasharray: circumference, strokeDashoffset: offset }}
+          />
+        </svg>
+        <span className="rank-ring__icon" aria-hidden="true">{rank.icon}</span>
+      </div>
+      <div className="rank-card__info">
+        <p className="rank-card__kicker">Ο βαθμός σου</p>
+        <p className="rank-card__name">{rank.name}</p>
+        <p className="rank-card__next">
+          {loading
+            ? '…'
+            : next
+              ? `${shownXp} XP · ${xpToNext} ως ${next.name}`
+              : `${shownXp} XP · Μέγιστος βαθμός! ⚓`}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// Three glassy "achievement" tiles with count-up numbers.
+function StatTiles({ streak, xp, completed, total, loading }) {
+  const s = useCountUp(streak, !loading)
+  const x = useCountUp(xp, !loading)
+  const c = useCountUp(completed, !loading)
+  const tiles = [
+    { key: 'streak', icon: '🔥', value: loading ? '…' : s, label: 'ημέρες σερί' },
+    { key: 'xp', icon: '⭐', value: loading ? '…' : x, label: 'πόντοι XP' },
+    { key: 'lessons', icon: '✅', value: loading ? '…' : `${c}/${total}`, label: 'μαθήματα' },
   ]
   return (
-    <div className="stats-strip">
-      {stats.map((s) => (
-        <span key={s.label} className="stats-strip__item">
-          <span aria-hidden="true">{s.icon}</span>
-          <b>{s.value}</b> {s.label}
-        </span>
+    <div className="stat-tiles">
+      {tiles.map((t) => (
+        <div key={t.key} className={`stat-tile stat-tile--${t.key}`}>
+          <span className="stat-tile__icon" aria-hidden="true">{t.icon}</span>
+          <span className="stat-tile__value">{t.value}</span>
+          <span className="stat-tile__label">{t.label}</span>
+        </div>
       ))}
     </div>
   )
@@ -243,7 +342,9 @@ function Home() {
 
       <NextLessonCard />
 
-      <StatsStrip
+      <RankCard xp={progress?.total_xp ?? 0} loading={progressLoading} />
+
+      <StatTiles
         streak={progress?.current_streak ?? 0}
         xp={progress?.total_xp ?? 0}
         completed={progress?.lessons_completed ?? 0}
@@ -288,9 +389,19 @@ function Home() {
           if (groupLessons.length === 0) return null
           return (
             <section key={group.key} className="home-section">
-              <h2 className="home-section__title">
-                {group.icon} {group.title}
-              </h2>
+              <header className="home-section__head">
+                <span
+                  className={`home-section__icon home-section__icon--${group.key}`}
+                  aria-hidden="true"
+                >
+                  {group.icon}
+                </span>
+                <span className="home-section__heading">
+                  <span className="home-section__kicker">{group.kicker}</span>
+                  <h2 className="home-section__title">{group.title}</h2>
+                </span>
+                <span className="home-section__count">{groupLessons.length}</span>
+              </header>
               <div className="lesson-list">
                 {groupLessons.map((lesson) => (
                   <LessonCard
