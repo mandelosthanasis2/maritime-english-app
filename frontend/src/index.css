@@ -3564,3 +3564,91 @@ textarea {
 .home-section__head .home-section__title::after {
   display: none;
 }
+
+/* ============================================================
+   Lesson player polish (UI/UX step 4) — animation only
+   ============================================================ */
+
+/* Thicker, livelier progress bar with a soft travelling sheen. */
+.player__bar {
+  height: 1rem;
+}
+
+.player__bar-fill {
+  position: relative;
+  overflow: hidden;
+  transition: width var(--t-med) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.player__bar-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transform: translateX(-100%);
+  animation: bar-sheen 2.6s ease-in-out infinite;
+}
+
+@keyframes bar-sheen {
+  to { transform: translateX(100%); }
+}
+
+/* Smoother slide-in between items (uses the shared page easing). */
+.player__step {
+  animation: step-in var(--t-page) both;
+}
+
+/* Micro-feedback: gentle pop on the correct feedback line and the chosen
+   correct option, so a right answer feels rewarding on the dark theme. */
+.feedback--correct,
+.option--correct {
+  animation: feedback-pop var(--t-med) cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes feedback-pop {
+  0% { transform: scale(0.82); opacity: 0; }
+  60% { transform: scale(1.06); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Completion celebration: lightweight confetti burst. */
+.player__done {
+  position: relative;
+  overflow: hidden;
+}
+
+.confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.confetti__bit {
+  position: absolute;
+  top: -8%;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: confetti-fall 1.6s cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
+}
+
+.confetti__bit--0 { background: var(--turquoise); }
+.confetti__bit--1 { background: var(--accent); }
+.confetti__bit--2 { background: var(--accent-2); }
+.confetti__bit--3 { background: var(--correct); }
+.confetti__bit--4 { background: #ffffff; }
+
+@keyframes confetti-fall {
+  0% { opacity: 0; transform: translateY(0) rotate(0); }
+  12% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(340px) rotate(440deg); }
+}
+
+/* No falling confetti when the user prefers reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
+}
