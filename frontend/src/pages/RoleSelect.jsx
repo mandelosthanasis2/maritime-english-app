@@ -5,7 +5,7 @@ import { setMyRole } from '../api.js'
 const ROLES = [
   { value: 'engineer', icon: '⚙️', label: 'Μηχανικός' },
   { value: 'deck', icon: '🧭', label: 'Αξιωματικός Καταστρώματος' },
-  { value: 'undecided', icon: '🤝', label: 'Δεν είμαι σίγουρος / Γενικά' },
+  { value: 'undecided', icon: '🤝', label: 'Γενική εκπαίδευση' },
 ]
 
 // Role choice screen: first onboarding step (before the placement test), and
@@ -47,7 +47,7 @@ export default function RoleSelect({ gated = false, onDone }) {
       )}
       <div className="player__intro">
         <div className="placement__emoji" aria-hidden="true">⚓</div>
-        <h1 className="lesson__title">Τι είσαι;</h1>
+        <h1 className="lesson__title">Ποιος είναι ο ρόλος σου;</h1>
         <div className="role-options">
           {ROLES.map((role) => (
             <button
@@ -65,7 +65,7 @@ export default function RoleSelect({ gated = false, onDone }) {
           ))}
         </div>
         <p className="role-hint">
-          Θα σου προτείνουμε μαθήματα ανάλογα με τον ρόλο σου — μπορείς να το
+          Τα προτεινόμενα μαθήματα προσαρμόζονται στον ρόλο σου. Μπορείς να τον
           αλλάξεις αργότερα.
         </p>
         {error && <p className="feedback feedback--wrong">{error}</p>}

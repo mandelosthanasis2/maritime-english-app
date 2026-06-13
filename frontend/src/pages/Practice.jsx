@@ -96,9 +96,9 @@ export default function Practice() {
         <div className="player__done">
           <div className="player__trophy">🌊</div>
           <h1 className="player__done-title">Δεν υπάρχουν αρκετές ασκήσεις ακόμα</h1>
-          <p className="player__done-sub">Δοκίμασε τα κανονικά μαθήματα — η έξυπνη εξάσκηση θα γεμίσει σύντομα.</p>
+          <p className="player__done-sub">Δοκίμασε τα κανονικά μαθήματα — θα προστεθούν σύντομα περισσότερες ασκήσεις.</p>
           <button type="button" className="player__start" onClick={stop}>
-            {doneCount > 0 ? 'Δες τι έκανες' : 'Πίσω στην αρχική'}
+            {doneCount > 0 ? 'Δες τη σύνοψη' : 'Πίσω στην αρχική'}
           </button>
         </div>
       </div>
@@ -161,7 +161,7 @@ export default function Practice() {
         <button type="button" className="player__close" onClick={stop} aria-label="Τέλος">
           ✕
         </button>
-        <span className="practice__title">✨ Έξυπνη εξάσκηση</span>
+        <span className="practice__title">Έξυπνη εξάσκηση</span>
         <span className="player__step-label">{doneCount + 1}</span>
       </div>
 

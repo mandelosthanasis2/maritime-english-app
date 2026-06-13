@@ -191,7 +191,7 @@ function Lesson() {
           )}
 
           {completionStatus === 'error' && (
-            <p className="player__saving">Η πρόοδος δεν αποθηκεύτηκε, αλλά μπράβο!</p>
+            <p className="player__saving">Η πρόοδος δεν αποθηκεύτηκε, αλλά ολοκλήρωσες το μάθημα.</p>
           )}
 
           <button type="button" className="player__start" onClick={goHome}>
