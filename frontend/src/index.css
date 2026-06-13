@@ -3652,3 +3652,99 @@ textarea {
     display: none;
   }
 }
+
+/* ============================================================
+   Pronunciation: push-to-talk mic (UI/UX step 5) — visual only
+   ============================================================ */
+.pa--mic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-top: var(--sp-5);
+}
+
+/* The big round target — the most prominent control on the speaking item. */
+.pa-mic {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--grad-primary);
+  box-shadow: var(--glow-teal), var(--sh-md);
+  transition: transform var(--t-fast), box-shadow var(--t-med);
+}
+
+.pa-mic__glyph {
+  font-size: 2.4rem;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.pa-mic:active {
+  transform: scale(0.96);
+}
+
+@media (hover: hover) {
+  .pa-mic:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 1px rgba(22, 184, 200, 0.4), 0 10px 34px rgba(22, 184, 200, 0.28);
+  }
+}
+
+.pa-mic__hint {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+/* Recording: warm coral button with expanding rings ("σε ακούω"). */
+.pa-mic--rec {
+  background: linear-gradient(135deg, #ff7a59, #e0533d);
+  box-shadow: 0 0 0 1px rgba(255, 122, 89, 0.45), 0 10px 30px rgba(224, 83, 61, 0.32);
+}
+
+.pa-mic__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 138, 107, 0.7);
+  animation: mic-ring 1.6s ease-out infinite;
+}
+
+.pa-mic__ring--2 {
+  animation-delay: 0.8s;
+}
+
+@keyframes mic-ring {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(1.85); opacity: 0; }
+}
+
+.pa-mic__hint--rec {
+  color: var(--accent);
+}
+
+/* Assessing: neutral disc with a large spinner. */
+.pa-mic--busy {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-shadow: var(--sh-sm);
+}
+
+.pa-mic__spinner {
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: var(--turquoise);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}

@@ -105,22 +105,31 @@ export default function PronunciationPractice({ referenceText }) {
 
   if (phase === 'recording') {
     return (
-      <div className="pa">
-        <button type="button" className="pa-record pa-record--active" onClick={stopRecording}>
-          <span className="pa-pulse" aria-hidden="true" />
-          Recording… tap to stop
+      <div className="pa pa--mic">
+        <button
+          type="button"
+          className="pa-mic pa-mic--rec"
+          onClick={stopRecording}
+          aria-label="Σταμάτα ηχογράφηση"
+        >
+          <span className="pa-mic__ring" aria-hidden="true" />
+          <span className="pa-mic__ring pa-mic__ring--2" aria-hidden="true" />
+          <span className="pa-mic__glyph" aria-hidden="true">⏹</span>
         </button>
+        <p className="pa-mic__hint pa-mic__hint--rec">
+          Σε ακούω… πάτα για να σταματήσεις
+        </p>
       </div>
     )
   }
 
   if (phase === 'assessing') {
     return (
-      <div className="pa">
-        <div className="pa-assessing">
-          <span className="pa-spinner" aria-hidden="true" />
-          Αξιολόγηση προφοράς…
+      <div className="pa pa--mic">
+        <div className="pa-mic pa-mic--busy" aria-hidden="true">
+          <span className="pa-mic__spinner" />
         </div>
+        <p className="pa-mic__hint">Ελέγχω την προφορά σου…</p>
       </div>
     )
   }
@@ -204,10 +213,16 @@ export default function PronunciationPractice({ referenceText }) {
 
   // idle
   return (
-    <div className="pa">
-      <button type="button" className="pa-record" onClick={startRecording}>
-        🎙️ Practise pronunciation
+    <div className="pa pa--mic">
+      <button
+        type="button"
+        className="pa-mic"
+        onClick={startRecording}
+        aria-label="Ξεκίνα ηχογράφηση προφοράς"
+      >
+        <span className="pa-mic__glyph" aria-hidden="true">🎙️</span>
       </button>
+      <p className="pa-mic__hint">Πάτα για να μιλήσεις</p>
     </div>
   )
 }
