@@ -84,6 +84,8 @@ export default function Login() {
           </span>
         </div>
 
+        <p className="auth-tagline">Μάθε Αγγλικά για τη ζωή στη θάλασσα ⚓</p>
+
         <div className="auth-tabs">
           <button
             type="button"
