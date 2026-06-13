@@ -13,6 +13,30 @@ function normalize(value) {
     .replace(/\s+/g, ' ')
 }
 
+// Shuffle a copy (Fisher–Yates). Grading is always value-based (compared to
+// the item's answer/text), never position-based, so reordering is safe.
+function shuffle(arr) {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+// Shuffle word-order chips, avoiding the already-correct order so a short
+// sentence isn't shown solved. Gives up after a few tries when every
+// arrangement reconstructs the text (e.g. repeated words).
+function shuffleChips(chips, targetText) {
+  if (chips.length < 2) return [...chips]
+  const target = normalize(targetText)
+  let out = shuffle(chips)
+  for (let i = 0; i < 12 && normalize(out.join(' ')) === target; i += 1) {
+    out = shuffle(chips)
+  }
+  return out
+}
+
 // Item types that must be answered before the player lets the user continue.
 export function isGatedType(type) {
   return type === 'fill_gap' || type === 'word_order'
@@ -117,7 +141,11 @@ function TeachingCard({ english, el }) {
 }
 
 function FillGap({ english, el, onAnswered, onResult }) {
-  const options = Array.isArray(english.options) ? english.options : []
+  // Shuffle once per mount (the player remounts each item), so the correct
+  // answer isn't always first. Stable across re-renders within the item.
+  const [options] = useState(() =>
+    shuffle(Array.isArray(english.options) ? english.options : []),
+  )
   const [selected, setSelected] = useState(null)
   const [correct, setCorrect] = useState(false)
   const [revealed, setRevealed] = useState(false)
@@ -206,7 +234,11 @@ function FillGap({ english, el, onAnswered, onResult }) {
 }
 
 function WordOrder({ english, el, onAnswered, onResult }) {
-  const scrambled = Array.isArray(english.scrambled) ? english.scrambled : []
+  // Shuffle once per mount, never showing the already-correct order. The
+  // correct order is derived from english.text, so grading stays right.
+  const [scrambled] = useState(() =>
+    shuffleChips(Array.isArray(english.scrambled) ? english.scrambled : [], english.text),
+  )
   // Track chosen words by their index in `scrambled` so duplicate words
   // (e.g. "The"/"the") remain individually addressable.
   const [placed, setPlaced] = useState([])
