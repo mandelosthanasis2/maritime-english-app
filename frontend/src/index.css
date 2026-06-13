@@ -3748,3 +3748,74 @@ textarea {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
+
+/* ============================================================
+   Onboarding finish (UI/UX steps 6+7) — the new user's first voyage
+   Visual/animation only. Placement & Practice already inherit the
+   player polish (thick progress bar, step slide-in); this unifies the
+   login + the intro / role / result entrances.
+   ============================================================ */
+
+/* --- Login (step 7): warm, glassy first impression -------------- */
+.auth {
+  background:
+    radial-gradient(820px 480px at 50% -10%, rgba(22, 184, 200, 0.18) 0%, transparent 68%),
+    var(--grad-header);
+}
+
+.auth-card {
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 55%),
+    var(--surface);
+  border: 1px solid rgba(22, 184, 200, 0.18);
+  box-shadow: var(--glow-teal), var(--sh-lg);
+  animation: card-rise var(--t-page) both;
+}
+
+.auth-brand {
+  margin-bottom: 0.55rem;
+}
+
+.auth-tagline {
+  margin: 0 0 1.4rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+/* Active tab needs to read against the (dark) card — lift it on a
+   lighter raised pill with a teal edge, not the same colour as the card. */
+.auth-tab--active {
+  background: var(--surface-2);
+  color: var(--teal);
+  box-shadow: 0 0 0 1px rgba(22, 184, 200, 0.25), var(--sh-sm);
+}
+
+.auth-submit:active {
+  transform: scale(0.99);
+}
+
+@media (hover: hover) {
+  .auth-submit:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* --- Shared onboarding entrances (step 6) ----------------------- */
+
+/* Intro screens (lesson start, placement welcome, role select) rise in. */
+.player__intro {
+  animation: card-rise var(--t-page) both;
+}
+
+/* Role cards reveal with a gentle stagger, like the home stat tiles. */
+.role-card {
+  animation: tile-rise var(--t-page) both;
+}
+
+.role-options .role-card:nth-child(2) { animation-delay: 70ms; }
+.role-options .role-card:nth-child(3) { animation-delay: 140ms; }
+
+/* Placement result panel reveals as one piece. */
+.placement-result {
+  animation: card-rise var(--t-page) both;
+}
