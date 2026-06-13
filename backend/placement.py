@@ -97,8 +97,15 @@ def _build_question(item, section, vocab_pool, rng):
             "options": rng.sample(options, len(options)),
         }
     elif kind == "word_order":
-        scrambled = english["scrambled"]
-        question["question"] = {"scrambled": rng.sample(scrambled, len(scrambled))}
+        chips = english["scrambled"]
+        shuffled = rng.sample(chips, len(chips))
+        # Avoid presenting the sentence already in the correct order.
+        target = _normalize(english.get("text", ""))
+        attempts = 0
+        while len(chips) > 1 and _normalize(" ".join(shuffled)) == target and attempts < 12:
+            shuffled = rng.sample(chips, len(chips))
+            attempts += 1
+        question["question"] = {"scrambled": shuffled}
     else:  # vocabulary: Greek prompt, choose the English term
         correct = english["text"]
         distractors = [t for t in dict.fromkeys(vocab_pool) if t != correct]
