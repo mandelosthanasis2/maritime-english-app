@@ -37,7 +37,7 @@ ALLOWED_ROLE_CATEGORIES = {"engineer", "deck", "common"}
 
 MAX_CHUNKS = 8
 TARGET_CHUNK_CHARS = 6000
-MAX_ITEMS_PER_CHUNK = 6
+MAX_ITEMS_PER_CHUNK = 12
 
 SYSTEM_PROMPT = """You are an expert English curriculum designer who creates practice items for Greek learners. You handle two kinds of content:
   - "maritime": maritime/nautical English grounded in IMO Standard Marine Communication Phrases (SMCP) and shipboard practice (engine room, bridge, deck, cargo, safety).
@@ -94,6 +94,16 @@ english shape by skill_type:
 - word_order: { "text": "<full correct English sentence>", "scrambled": ["<word/chunk>", ...] }  (chunks must reconstruct text exactly; multi-word chunks allowed)
 - roleplay (use "type":"dialogue", "skill_type":"roleplay"): { "scenario": "<English>", "lines": [{"speaker": "...", "text": "<English>"}], "user_role": "<which speaker the learner plays>" }
 - translation (use "type":"translation", "skill_type":"speaking"): { "text": "<target English>" }, with the Greek source in explanations.el.prompt
+
+LESSON STRUCTURE, SIZE & PACING (mandatory for every lesson)
+- SIZE: each lesson MUST have 8-12 items — never fewer than 8. If the source passage is small, go DEEPER on the same material (more examples, more practice items covering the same vocabulary/rule) rather than emitting a tiny 3-item lesson. Never pad with off-topic content.
+- ORDER the "items" array as a pedagogical build-up (this becomes the learner's sequence):
+  1. 1-2 "teaching" concept items (the explanation, as described above).
+  2. RECOGNITION: vocabulary and listening items (understand the material).
+  3. PRODUCTION: fill_gap and word_order items (use the material).
+  4. At least ONE speaking item (skill_type "speaking") — MANDATORY in every lesson, so the learner practises pronunciation.
+  5. At least ONE roleplay item (type "dialogue", skill_type "roleplay") at the END — applying the material in a realistic dialogue — whenever it fits the topic.
+- VARIETY: do not place many items of the same type back-to-back; alternate types so the lesson has rhythm.
 
 CRITICAL RULES
 - GRAMMAR items: explanations.el.note MUST contain a clear Greek explanation of the grammar rule the item practises — what the rule is, and how/when it is used — in simple words for a Greek beginner. This is mandatory for every grammar item.
@@ -290,10 +300,13 @@ def _chunk_user_prompt(chunk, kind, known_titles):
         f"{kind_line}\n\n"
         f"{titles_block}"
         "Group the practice items you create from the passage below into one or more "
-        "lessons. Every NEW lesson must START with 1-2 Greek 'teaching' concept items "
-        "(detailed Greek explanation + 2-3 examples) BEFORE the exercises. If the "
-        "passage already contains exercises with answers, convert those. Grammar items "
-        "must include a clear Greek rule explanation in explanations.el.note.\n\n"
+        "lessons. Each lesson must have 8-12 items, ordered as a pedagogical build-up: "
+        "1-2 Greek 'teaching' concept items first, then recognition (vocabulary, "
+        "listening), then production (fill_gap, word_order), then at least one speaking "
+        "item, and a roleplay dialogue at the end where it fits. If the source is small, "
+        "go deeper on the same material instead of making a tiny lesson. If the passage "
+        "already contains exercises with answers, convert those. Grammar items must "
+        "include a clear Greek rule explanation in explanations.el.note.\n\n"
         f"<source_passage>\n{chunk}\n</source_passage>\n\n"
         "Return ONLY the JSON array of lesson objects."
     )
@@ -303,7 +316,7 @@ def _generate_chunk_lessons(client, anthropic, chunk, kind, known_titles):
     try:
         response = client.messages.create(
             model=MODEL,
-            max_tokens=8000,
+            max_tokens=12000,
             system=SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": _chunk_user_prompt(chunk, kind, known_titles)}
@@ -611,3 +624,146 @@ def generate_teaching_for_lesson(title, track, digest):
     if not teaching:
         raise AdminGenError("Ο generator δεν επέστρεψε έγκυρα teaching items. Δοκίμασε ξανά.", 502)
     return teaching
+
+
+# --- Enrichment of small / incomplete existing lessons ------------------------
+#
+# Brings an existing lesson up to the pedagogical standard (8-12 items, with a
+# speaking item and a closing roleplay) by generating ONLY the items it is
+# missing, grounded in the lesson's own content. Existing items are never
+# touched — the new items are stored as drafts for review.
+
+ENRICH_TARGET_MIN = 8
+ENRICH_TARGET_MAX = 12
+# Varied exercise types used to fill a lesson up to the minimum size.
+ENRICH_EXERCISE_CYCLE = ("vocabulary", "fill_gap", "word_order", "listening")
+# Pedagogical order: recognition -> production -> speaking -> roleplay (last).
+ENRICH_RANK = {
+    "vocabulary": 1,
+    "listening": 1,
+    "fill_gap": 2,
+    "word_order": 2,
+    "speaking": 3,
+    "roleplay": 4,
+}
+
+ENRICH_SYSTEM_PROMPT = """You extend an EXISTING English lesson for Greek learners by writing the practice items it is missing, grounded in the lesson's own topic and vocabulary. You do NOT rewrite or repeat existing items.
+
+You receive the lesson title, track, and a digest of its current items, plus the EXACT list of new items to produce. Produce exactly those items, in the given order.
+
+Each ITEM object:
+{
+  "type": "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "dialogue",
+  "skill_type": "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "roleplay",
+  "level": CEFR band "A1|A2|B1|B2|C1" (match the lesson),
+  "difficulty": same band,
+  "ship_types": array of strings (["all"] for general grammar),
+  "english": { ... shape depends on skill_type ... },
+  "explanations": { "el": { "translation": "<Greek>", "note": "<Greek note>", "prompt": "<optional Greek prompt for translation>" } },
+  "pronunciation_focus": array of short strings (may be empty),
+  "tags": array of short lowercase strings
+}
+
+english shape by skill_type:
+- vocabulary / speaking / listening: { "text": "<English>", "phonetic": "<IPA>" }
+- fill_gap: { "text": "<full English sentence>", "gap_text": "<same sentence with ___ for the blank>", "answer": "<missing word>", "options": ["<answer>", "<distractor>", "<distractor>", "<distractor>"] }
+- word_order: { "text": "<full correct English sentence>", "scrambled": ["<word/chunk>", ...] }  (chunks must reconstruct text exactly)
+- speaking: { "text": "<short English phrase to say aloud>", "phonetic": "<IPA>" }
+- roleplay (use "type":"dialogue", "skill_type":"roleplay"): { "scenario": "<English>", "lines": [{"speaker": "...", "text": "<English>"}], "user_role": "<which speaker the learner plays>" }
+
+RULES
+- Ground every item in the lesson's existing topic/terms — no unrelated content.
+- GRAMMAR items: explanations.el.note MUST give a clear Greek rule explanation.
+- MARITIME items: realistic SMCP / shipboard English; Greek note explains the term/usage.
+- All explanations.el text is in Greek. Do NOT invent "audio_url" or "id".
+- Output ONLY a valid JSON array of the requested item objects. No prose, no code fences."""
+
+
+def _item_skill(item):
+    return (item.skill_type or item.type or "").lower()
+
+
+def analyze_lesson_gaps(items):
+    """Decide which items an existing lesson needs to reach the standard.
+
+    Returns {count, have_speaking, have_roleplay, needed} where `needed` is an
+    ordered list of skill_types to generate (may be empty when the lesson is
+    already complete).
+    """
+    count = len(items)
+    skills = [_item_skill(i) for i in items]
+    have_speaking = "speaking" in skills
+    have_roleplay = "roleplay" in skills
+
+    needed = []
+    if not have_speaking:
+        needed.append("speaking")
+    if not have_roleplay:
+        needed.append("roleplay")
+    # Fill with varied exercises until the lesson reaches the minimum size,
+    # without pushing the total past the maximum.
+    cycle_i = 0
+    while count + len(needed) < ENRICH_TARGET_MIN and count + len(needed) < ENRICH_TARGET_MAX:
+        needed.append(ENRICH_EXERCISE_CYCLE[cycle_i % len(ENRICH_EXERCISE_CYCLE)])
+        cycle_i += 1
+
+    needed.sort(key=lambda s: ENRICH_RANK.get(s, 2))
+    return {
+        "count": count,
+        "have_speaking": have_speaking,
+        "have_roleplay": have_roleplay,
+        "needed": needed,
+    }
+
+
+def generate_enrichment_items(title, track, role_category, digest, needed):
+    """Ask Claude for exactly the `needed` items for an existing lesson."""
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        logger.error("ANTHROPIC_API_KEY is not set; generation unavailable.")
+        raise AdminGenError("Item generation is not configured on the server.", 503)
+    try:
+        import anthropic
+    except ImportError as exc:  # pragma: no cover - dependency missing
+        logger.exception("anthropic SDK failed to import.")
+        raise AdminGenError("Item generation is not available on the server.", 503) from exc
+
+    # A readable, numbered shopping list of what to produce, in order.
+    lines = "\n".join(f"{i + 1}. skill_type = {s}" for i, s in enumerate(needed))
+    user_prompt = (
+        f'LESSON TITLE: "{title}"\n'
+        f"TRACK: {track}\nROLE: {role_category}\n\n"
+        "EXISTING ITEMS (digest — do NOT repeat these):\n"
+        f"{digest}\n\n"
+        f"PRODUCE EXACTLY THESE {len(needed)} NEW ITEMS, IN THIS ORDER:\n{lines}\n\n"
+        "Return ONLY the JSON array."
+    )
+    client = anthropic.Anthropic()
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=6000,
+            system=ENRICH_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            output_config={"effort": "medium"},
+        )
+    except anthropic.APIError as exc:
+        logger.warning("Anthropic call failed for enrichment: %s", exc)
+        raise AdminGenError("The generator is unavailable right now.", 502) from exc
+
+    text = "".join(b.text for b in response.content if b.type == "text")
+    raws = _parse_json_array(text)
+
+    items = []
+    for raw in raws:
+        english = raw.get("english")
+        if not isinstance(english, dict) or not english:
+            continue  # malformed — skip
+        # Never let enrichment introduce a teaching card (that's a separate flow).
+        skill = (raw.get("skill_type") or raw.get("type") or "").lower()
+        if skill == "teaching":
+            continue
+        items.append(raw)
+    if not items:
+        raise AdminGenError("Ο generator δεν επέστρεψε έγκυρα items. Δοκίμασε ξανά.", 502)
+    return items

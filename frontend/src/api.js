@@ -279,6 +279,12 @@ export function adminGenerateTeaching(lessonId) {
   )
 }
 
+export function adminEnrichLesson(lessonId) {
+  return adminRequest(`/api/admin/lessons/${encodeURIComponent(lessonId)}/enrich`, {
+    method: 'POST',
+  })
+}
+
 export function adminApproveLesson(lessonId) {
   return adminRequest(`/api/admin/lessons/${encodeURIComponent(lessonId)}/approve`, {
     method: 'POST',

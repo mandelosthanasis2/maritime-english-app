@@ -9,6 +9,7 @@ import {
   adminEditItem,
   adminEditLesson,
   adminGenerateItems,
+  adminEnrichLesson,
   adminGenerateTeaching,
   fetchLessons,
 } from '../api.js'
@@ -361,11 +362,13 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
   )
 }
 
-// Backfill: add a teaching concept card to lessons created before the
-// "teaching" type existed. Generation stores DRAFTS that show up in the
-// review area below for editing/approval — nothing goes live directly.
-function TeachingBackfill({ lessons, reload }) {
-  const [busyId, setBusyId] = useState(null)
+// Maintenance for existing lessons: auto-categorize, add a teaching concept
+// card, or enrich a thin lesson with the items it's missing. Every action
+// stores DRAFTS that show up in the review area below — nothing goes live
+// directly.
+function ExistingLessonsPanel({ lessons, reload }) {
+  // busy = `${lessonId}:${action}` while a per-row action runs.
+  const [busy, setBusy] = useState(null)
   const [notes, setNotes] = useState({}) // lesson_id -> status message
   // Optimistic category overrides while the autosave is in flight.
   const [categories, setCategories] = useState({})
@@ -404,7 +407,7 @@ function TeachingBackfill({ lessons, reload }) {
   }
 
   async function generate(lessonId) {
-    setBusyId(lessonId)
+    setBusy(`${lessonId}:teaching`)
     setNotes((n) => ({ ...n, [lessonId]: null }))
     try {
       await adminGenerateTeaching(lessonId)
@@ -416,7 +419,27 @@ function TeachingBackfill({ lessons, reload }) {
     } catch (err) {
       setNotes((n) => ({ ...n, [lessonId]: err.message }))
     } finally {
-      setBusyId(null)
+      setBusy(null)
+    }
+  }
+
+  async function enrich(lessonId) {
+    setBusy(`${lessonId}:enrich`)
+    setNotes((n) => ({ ...n, [lessonId]: null }))
+    try {
+      const res = await adminEnrichLesson(lessonId)
+      const added = res.items?.length || 0
+      setNotes((n) => ({
+        ...n,
+        [lessonId]: res.message
+          ? res.message
+          : `✓ Προστέθηκαν ${added} ${added === 1 ? 'item' : 'items'} ως drafts — έλεγξέ τα στα «Προτεινόμενα μαθήματα» παρακάτω.`,
+      }))
+      if (added) reload()
+    } catch (err) {
+      setNotes((n) => ({ ...n, [lessonId]: err.message }))
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -437,10 +460,11 @@ function TeachingBackfill({ lessons, reload }) {
 
   return (
     <section className="admin-panel">
-      <h2 className="admin-panel__title">Διδασκαλία σε υπάρχοντα μαθήματα ({lessons.length})</h2>
+      <h2 className="admin-panel__title">Υπάρχοντα μαθήματα ({lessons.length})</h2>
       <p className="admin-hint">
-        Για μαθήματα που φτιάχτηκαν πριν υπάρξει η διδασκαλία: δημιουργεί 1-2 teaching
-        items στην αρχή του μαθήματος, ως drafts για έλεγχο πριν την έγκριση.
+        Ταξινόμηση, προσθήκη διδασκαλίας (1-2 teaching items στην αρχή), ή εμπλουτισμός
+        ενός λιτού μαθήματος με τα items που του λείπουν (speaking, roleplay, περισσότερες
+        ασκήσεις ώστε να φτάσει 8-12). Όλα ως drafts για έλεγχο πριν την έγκριση.
       </p>
       <button
         type="button"
@@ -484,14 +508,28 @@ function TeachingBackfill({ lessons, reload }) {
               type="button"
               className="admin-btn admin-btn--ghost"
               onClick={() => generate(lesson.lesson_id)}
-              disabled={busyId !== null}
+              disabled={busy !== null}
             >
-              {busyId === lesson.lesson_id ? (
+              {busy === `${lesson.lesson_id}:teaching` ? (
                 <>
                   <span className="pa-spinner" aria-hidden="true" /> Δημιουργία…
                 </>
               ) : (
                 '➕ Πρόσθεσε διδασκαλία'
+              )}
+            </button>
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost"
+              onClick={() => enrich(lesson.lesson_id)}
+              disabled={busy !== null}
+            >
+              {busy === `${lesson.lesson_id}:enrich` ? (
+                <>
+                  <span className="pa-spinner" aria-hidden="true" /> Εμπλουτισμός…
+                </>
+              ) : (
+                '➕ Εμπλούτισε μάθημα'
               )}
             </button>
           </div>
@@ -639,7 +677,7 @@ export default function Admin() {
 
       {error && <p className="admin-error">{error}</p>}
 
-      <TeachingBackfill lessons={approvedLessons} reload={() => load()} />
+      <ExistingLessonsPanel lessons={approvedLessons} reload={() => load()} />
 
       <section className="admin-panel">
         <h2 className="admin-panel__title">Προτεινόμενα μαθήματα ({groups.length})</h2>
