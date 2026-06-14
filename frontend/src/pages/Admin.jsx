@@ -17,8 +17,8 @@ import {
 
 const DIFFICULTIES = ['A1', 'A2', 'B1', 'B2', 'C1']
 const SKILL_TYPES = ['teaching', 'vocabulary', 'listening', 'fill_gap', 'word_order', 'speaking', 'roleplay']
-const TRACKS = ['maritime', 'grammar']
-const TRACK_LABEL = { grammar: 'Γραμματική', maritime: 'Maritime' }
+const TRACKS = ['maritime', 'grammar', 'email']
+const TRACK_LABEL = { grammar: 'Γραμματική', maritime: 'Maritime', email: '✉️ Email' }
 const ROLE_CATEGORIES = ['engineer', 'deck', 'common']
 const ROLE_LABEL = {
   engineer: '⚙️ Μηχανικοί',
@@ -29,6 +29,7 @@ const KINDS = [
   { value: 'auto', label: 'Αυτόματο' },
   { value: 'grammar', label: 'Γραμματική' },
   { value: 'maritime', label: 'Maritime' },
+  { value: 'email', label: '✉️ Email Writing' },
 ]
 
 // Inline editor for a single draft item.
@@ -550,7 +551,7 @@ function ExistingLessonsPanel({ lessons, reload }) {
         {lessons.map((lesson) => (
           <div key={lesson.lesson_id} className="admin-teach-row">
             <div className="admin-teach-row__info">
-              <span className={`badge badge--track badge--track-${lesson.track === 'grammar' ? 'grammar' : 'maritime'}`}>
+              <span className={`badge badge--track badge--track-${['grammar', 'email'].includes(lesson.track) ? lesson.track : 'maritime'}`}>
                 {TRACK_LABEL[lesson.track] || lesson.track}
               </span>
               <span className="admin-teach-row__title">{lesson.title}</span>

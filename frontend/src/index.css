@@ -2050,6 +2050,10 @@ h3 {
   background: var(--teal);
 }
 
+.badge--track-email {
+  background: #6b5bd2;
+}
+
 .admin-input--file {
   padding: 0.45rem;
   font-size: 0.85rem;
@@ -3347,6 +3351,7 @@ textarea {
 .home-section__icon--engineer { background: rgba(255, 122, 89, 0.14); }
 .home-section__icon--deck { background: rgba(22, 184, 200, 0.14); }
 .home-section__icon--common { background: rgba(47, 214, 176, 0.14); }
+.home-section__icon--email { background: rgba(107, 91, 210, 0.16); }
 
 .home-section__heading {
   display: flex;

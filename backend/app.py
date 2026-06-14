@@ -673,7 +673,9 @@ def next_exercise():
         progress = get_or_create_progress(session, user_id, email)
         session.commit()
 
-        rows = _approved_items_with_track(session)
+        # Email-writing is a self-contained track (phase 1): keep it out of the
+        # grammar/maritime adaptive smart-practice pool.
+        rows = [(i, t) for i, t in _approved_items_with_track(session) if t != "email"]
         stats = session.query(UserItemStat).filter_by(user_id=user_id).all()
 
         choice = choose_next(progress, rows, stats)
@@ -708,8 +710,14 @@ def next_lesson():
         progress = get_or_create_progress(session, user_id, email)
         session.commit()
 
-        # Approved lessons with their approved items, grouped per lesson.
-        lessons = session.query(Lesson).filter_by(status="approved").all()
+        # Approved lessons with their approved items, grouped per lesson. Email
+        # lessons are a self-contained track (phase 1) — excluded from the
+        # adaptive "next lesson" recommendation (they're browsed from home).
+        lessons = (
+            session.query(Lesson)
+            .filter(Lesson.status == "approved", Lesson.track != "email")
+            .all()
+        )
         items_by_lesson = {}
         for item, _track in _approved_items_with_track(session):
             items_by_lesson.setdefault(item.lesson_id, []).append(item)
