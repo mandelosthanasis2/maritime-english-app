@@ -37,7 +37,12 @@ ALLOWED_ROLE_CATEGORIES = {"engineer", "deck", "common"}
 
 MAX_CHUNKS = 8
 TARGET_CHUNK_CHARS = 6000
-MAX_ITEMS_PER_CHUNK = 20
+# Per-lesson sizing. IDEAL_* guides the model; MAX_ITEMS_PER_LESSON is a HARD
+# backstop enforced in code (after de-duplication) so a lesson can never balloon
+# — e.g. when several chunks contribute items to the same lesson title.
+IDEAL_ITEMS_MIN = 12
+IDEAL_ITEMS_MAX = 18
+MAX_ITEMS_PER_LESSON = 20
 
 SYSTEM_PROMPT = """You are an expert English curriculum designer who creates practice items for Greek learners. You handle two kinds of content:
   - "maritime": maritime/nautical English grounded in IMO Standard Marine Communication Phrases (SMCP) and shipboard practice (engine room, bridge, deck, cargo, safety).
@@ -97,11 +102,13 @@ english shape by skill_type:
 - translation (use "type":"translation", "skill_type":"speaking"): { "text": "<target English>" }, with the Greek source in explanations.el.prompt
 
 LESSON STRUCTURE, SIZE & PACING (mandatory for every lesson)
-- SIZE: each lesson MUST have 15-20 items — a complete ~15-20 minute lesson — and NEVER fewer than 15. Be ADAPTIVE to the material: when the passage is rich, go toward 20; when it is more limited, still produce at least 15 by going DEEPER on the same material (more examples, more practice items covering the same vocabulary/rule). Going deeper is always preferred to a shorter lesson — never emit fewer than 15, and never pad with off-topic content.
-- ORDER the "items" array as a pedagogical build-up (this becomes the learner's sequence). Keep this same structure but put SEVERAL items in each phase to reach 15-20:
+- SIZE: aim for 12-18 items per lesson. NEVER produce more than 20 items in a single lesson — this is a HARD limit. If the source material is large, SPLIT it into MULTIPLE separate lessons (each a coherent sub-topic) instead of one oversized lesson.
+- QUALITY OVER QUANTITY: only create an item if it teaches something distinct. If the material genuinely supports just 10 strong items, produce 10 — do NOT pad to hit a number. Twelve sharp, distinct items beat twenty with filler.
+- NO REPETITION (critical): every item MUST teach something DIFFERENT. Do NOT reuse the same word/phrase/concept across multiple items, and do NOT produce duplicate or near-duplicate exercises (e.g. the same sentence as both a fill_gap and a word_order, or several vocabulary items for the same word). Each item is unique.
+- ORDER the "items" array as a pedagogical build-up (this becomes the learner's sequence). Keep this structure, with a few DISTINCT items per phase:
   1. 1-2 "teaching" concept items (the explanation, as described above).
-  2. RECOGNITION: several vocabulary and listening items (understand the material).
-  3. PRODUCTION: several fill_gap and word_order items (use the material).
+  2. RECOGNITION: a few distinct vocabulary and listening items (understand the material).
+  3. PRODUCTION: a few distinct fill_gap and word_order items (use the material).
   4. At least ONE speaking item (skill_type "speaking") — MANDATORY in every lesson, so the learner practises pronunciation.
   5. At least ONE roleplay item (type "dialogue", skill_type "roleplay") at the END — applying the material in a realistic dialogue — whenever it fits the topic.
 - VARIETY: do not place many items of the same type back-to-back; alternate types so the lesson has rhythm.
@@ -263,6 +270,39 @@ def _norm(title):
     return re.sub(r"\s+", " ", _norm_title(title)).strip()
 
 
+def _item_signature(raw):
+    """A normalized fingerprint of an item's core content, for de-duplication.
+
+    Uses the English text (or a roleplay scenario) plus the gap answer, so two
+    items that drill the SAME word/sentence collapse to one signature even if
+    the model dressed them up slightly differently. Returns "" when there is no
+    usable text (those items are never treated as duplicates).
+    """
+    if not isinstance(raw, dict):
+        return ""
+    english = raw.get("english") or {}
+    parts = [
+        english.get("text") or english.get("scenario") or "",
+        english.get("answer") or "",
+    ]
+    sig = " ".join(p for p in parts if p)
+    return re.sub(r"\s+", " ", sig.strip().lower())
+
+
+def _dedup_items(items):
+    """Drop later items whose content signature repeats an earlier one."""
+    seen = set()
+    out = []
+    for raw in items:
+        sig = _item_signature(raw)
+        if sig and sig in seen:
+            continue
+        if sig:
+            seen.add(sig)
+        out.append(raw)
+    return out
+
+
 def _resolve_track(value, kind):
     if kind in ("grammar", "maritime"):
         return kind
@@ -301,16 +341,18 @@ def _chunk_user_prompt(chunk, kind, known_titles):
         f"{kind_line}\n\n"
         f"{titles_block}"
         "Group the practice items you create from the passage below into one or more "
-        "lessons. Each lesson must have 15-20 items (a ~15-20 minute lesson, never fewer "
-        "than 15), ordered as a pedagogical build-up: 1-2 Greek 'teaching' concept items "
-        "first, then several recognition items (vocabulary, listening), then several "
+        "lessons. Aim for 12-18 items per lesson and NEVER more than 20 — if the passage "
+        "is large, split it into MULTIPLE lessons rather than one oversized lesson. Order "
+        "each lesson as a pedagogical build-up: 1-2 Greek 'teaching' concept items first, "
+        "then a few distinct recognition items (vocabulary, listening), then a few distinct "
         "production items (fill_gap, word_order), then at least one speaking item, and a "
         "roleplay dialogue at the end where it fits. Vocabulary items are MULTIPLE-CHOICE "
-        "(English word -> pick the Greek meaning) with 3-4 plausible options. Be adaptive: "
-        "with rich material go toward 20; with limited material still reach at least 15 by "
-        "going deeper on the same material instead of making a tiny lesson. If the passage "
-        "already contains exercises with answers, convert those. Grammar items must "
-        "include a clear Greek rule explanation in explanations.el.note.\n\n"
+        "(English word -> pick the Greek meaning) with 3-4 plausible options. NO REPETITION: "
+        "every item must teach something DIFFERENT — no duplicate or near-duplicate "
+        "exercises, and never reuse the same word/phrase/concept across items. Quality over "
+        "quantity: if the material only supports ~10 strong distinct items, produce 10 — do "
+        "not pad. If the passage already contains exercises with answers, convert those. "
+        "Grammar items must include a clear Greek rule explanation in explanations.el.note.\n\n"
         f"<source_passage>\n{chunk}\n</source_passage>\n\n"
         "Return ONLY the JSON array of lesson objects."
     )
@@ -426,6 +468,19 @@ def generate_lessons(source_text, kind, existing_lessons=None):
 
     if not proposed:
         raise AdminGenError("Η παραγωγή απέτυχε για όλα τα τμήματα. Δοκίμασε ξανά.", 502)
+
+    # De-duplicate within each lesson and enforce the HARD per-lesson cap. This
+    # is the backstop for cross-chunk merges (several chunks adding items to the
+    # same lesson title) and any repetitive output the prompt didn't prevent.
+    for entry in proposed:
+        deduped = _dedup_items(entry["items"])
+        if len(deduped) != len(entry["items"]):
+            logger.info(
+                "Lesson %r: dropped %d duplicate item(s).",
+                entry["title_en"],
+                len(entry["items"]) - len(deduped),
+            )
+        entry["items"] = deduped[:MAX_ITEMS_PER_LESSON]
 
     total_items = sum(len(p["items"]) for p in proposed)
     logger.info(
@@ -637,8 +692,8 @@ def generate_teaching_for_lesson(title, track, digest):
 # missing, grounded in the lesson's own content. Existing items are never
 # touched — the new items are stored as drafts for review.
 
-ENRICH_TARGET_MIN = 15
-ENRICH_TARGET_MAX = 20
+ENRICH_TARGET_MIN = 12
+ENRICH_TARGET_MAX = 18
 # Varied exercise types used to fill a lesson up to the minimum size.
 ENRICH_EXERCISE_CYCLE = ("vocabulary", "fill_gap", "word_order", "listening")
 # Pedagogical order: recognition -> production -> speaking -> roleplay (last).
@@ -678,6 +733,8 @@ english shape by skill_type:
 
 RULES
 - Ground every item in the lesson's existing topic/terms — no unrelated content.
+- NO REPETITION (critical): each new item MUST teach something DIFFERENT from the lesson's existing items AND from each other. No duplicates or near-duplicates, and never reuse the same word/phrase/concept that an existing item already covers.
+- QUALITY OVER QUANTITY: prefer fewer, genuinely distinct items over repetitive filler — never pad just to reach the count.
 - GRAMMAR items: explanations.el.note MUST give a clear Greek rule explanation.
 - MARITIME items: realistic SMCP / shipboard English; Greek note explains the term/usage.
 - All explanations.el text is in Greek. Do NOT invent "audio_url" or "id".
@@ -769,6 +826,8 @@ def generate_enrichment_items(title, track, role_category, digest, needed):
         if skill == "teaching":
             continue
         items.append(raw)
+    # Drop any duplicate items the model produced among the new ones.
+    items = _dedup_items(items)
     if not items:
         raise AdminGenError("Ο generator δεν επέστρεψε έγκυρα items. Δοκίμασε ξανά.", 502)
     return items
