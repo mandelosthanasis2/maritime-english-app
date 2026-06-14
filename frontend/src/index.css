@@ -3744,17 +3744,12 @@ textarea {
   flex-shrink: 0;
 }
 
-/* Login: the full logo with the "Maritime English" subtitle. The asset is
-   drawn for a light background, so it sits on a white plaque to stay legible
-   on the dark auth card while keeping the exact brand artwork. */
+/* Login: the dark-background logo (with its "Maritime English" subtitle)
+   floats directly on the deep-sea auth card — no plaque needed. */
 .auth-logo-full {
   display: block;
   width: 15rem;
   max-width: 100%;
   height: auto;
   margin: 0 auto;
-  background: #fff;
-  padding: 0.7rem 1.1rem;
-  border-radius: var(--r-lg);
-  box-shadow: var(--sh-sm);
 }
