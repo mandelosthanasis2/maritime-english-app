@@ -245,11 +245,12 @@ function FillGap({ english, el, onAnswered, onResult }) {
   )
 }
 
-// Vocabulary as a multiple-choice exercise: show the English word (with IPA and
-// TTS) and let the learner pick its Greek meaning from 3-4 options. Grading is
-// value-based against english.answer, so the shuffled order is safe (same
-// approach as FillGap / the choices we shuffled in #46). After answering, the
-// correct meaning is revealed alongside the pronunciation that was always shown.
+// Vocabulary as a multiple-choice exercise: show the English word (with a TTS
+// "listen" button) and let the learner pick its Greek meaning from 3-4 options.
+// Grading is value-based against english.answer, so the shuffled order is safe
+// (same approach as FillGap / the choices we shuffled in #46). After answering,
+// the correct meaning is revealed. The IPA is intentionally not shown — it
+// crowded the question and isn't needed for this task.
 function VocabularyChoice({ english, el, onAnswered, onResult }) {
   const [options] = useState(() =>
     shuffle(Array.isArray(english.options) ? english.options : []),
@@ -299,7 +300,6 @@ function VocabularyChoice({ english, el, onAnswered, onResult }) {
     <div className="interactive">
       <p className="item-card__prompt">Διάλεξε τη σωστή σημασία:</p>
       <p className="item-card__english">{english.text}</p>
-      {english.phonetic && <p className="item-card__phonetic">{english.phonetic}</p>}
       <ListenButton text={english.text} />
 
       <div className="options">
