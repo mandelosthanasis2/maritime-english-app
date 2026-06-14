@@ -139,6 +139,10 @@ def select_questions(rows, rng=None):
     for item, track in rows:
         if not is_testable(item):
             continue
+        # Email-writing items aren't part of CEFR/SMCP leveling — keep them out
+        # of the placement test.
+        if track == "email":
+            continue
         (grammar if section_for_track(track) == "grammar" else maritime).append(item)
 
     chosen = []

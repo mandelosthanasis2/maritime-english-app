@@ -31,8 +31,8 @@ ALLOWED_SKILL_TYPES = {
     "speaking",
     "roleplay",
 }
-ALLOWED_KINDS = {"auto", "grammar", "maritime"}
-ALLOWED_TRACKS = {"grammar", "maritime"}
+ALLOWED_KINDS = {"auto", "grammar", "maritime", "email"}
+ALLOWED_TRACKS = {"grammar", "maritime", "email"}
 ALLOWED_ROLE_CATEGORIES = {"engineer", "deck", "common"}
 
 MAX_CHUNKS = 8
@@ -50,20 +50,21 @@ MAX_ITEMS_PER_LESSON = 20
 # making the caller retry. (gunicorn's --timeout is already 600s.)
 GENERATION_TIMEOUT_SECONDS = 900
 
-SYSTEM_PROMPT = """You are an expert English curriculum designer who creates practice items for Greek learners. You handle two kinds of content:
+SYSTEM_PROMPT = """You are an expert English curriculum designer who creates practice items for Greek learners. You handle three kinds of content:
   - "maritime": maritime/nautical English grounded in IMO Standard Marine Communication Phrases (SMCP) and shipboard practice (engine room, bridge, deck, cargo, safety).
   - "grammar": general English grammar and vocabulary for everyday/learner use.
+  - "email": how seafarers write professional emails in English (e.g. emails to the company/office, reports, requests) — greetings, structure, set phrases, tone.
 
-You receive a passage of source material. You GROUP the practice items you create into one or more coherent LESSONS (e.g. "The Bridge", "Steering & Helm Orders", "Radar Basics", or for grammar "Present Perfect", "Comparatives"). A passage may yield several lessons; each lesson bundles related items.
+You receive a passage of source material. You GROUP the practice items you create into one or more coherent LESSONS (e.g. "The Bridge", "Steering & Helm Orders", "Radar Basics", or for grammar "Present Perfect", "Comparatives", or for email "Reporting to the Office", "Requesting Spare Parts"). A passage may yield several lessons; each lesson bundles related items.
 
 DECIDING THE TRACK
-- If told the kind is "maritime" or "grammar", use that for every lesson.
-- If told "auto", decide per lesson: nautical/shipboard content -> "maritime"; general English grammar/usage -> "grammar".
+- If told the kind is "maritime", "grammar" or "email", use that for every lesson.
+- If told "auto", decide per lesson: nautical/shipboard content -> "maritime"; general English grammar/usage -> "grammar". (Do NOT pick "email" in auto mode — email lessons are only produced when the kind is explicitly "email".)
 
 TEACHING FIRST (concept cards)
 - Every NEW lesson MUST START with 1-2 "teaching" items — the concept explanation a teacher would give BEFORE the exercises. They must be the FIRST entries of the lesson's "items" array; all exercises come after them.
 - A teaching item is reading material, not an exercise: it has NO answer. Its explanations.el.note is the actual mini-lesson the learner reads — a DETAILED Greek explanation of the concept: what it is, when and how it is used, written simply for a Greek learner. Include 2-3 examples in explanations.el.examples (each an English sentence with its Greek translation).
-- Track-aware content: for "grammar" lessons the teaching item explains the grammar rule; for "maritime" lessons it explains the terminology/procedure and how it is used on board.
+- Track-aware content: for "grammar" lessons the teaching item explains the grammar rule; for "maritime" lessons it explains the terminology/procedure and how it is used on board; for "email" lessons it explains what the email is, when you write it, and its structure (see EMAIL WRITING LESSONS below).
 - When you reuse an EXISTING lesson title (merging items into it), do NOT add teaching items unless the passage introduces a clearly different concept.
 
 AVOIDING DUPLICATE LESSONS
@@ -73,14 +74,14 @@ DECIDING THE ROLE CATEGORY
 Each lesson also gets a "role_category" — who on board it is for:
 - "engineer": engine room, machinery, engine orders, fuel/lubrication, technical maintenance.
 - "deck": bridge, navigation, radar, helm/steering, mooring, cargo handling on deck.
-- "common": for everyone — safety, emergencies, general communication, SMCP basics, and ALL grammar lessons (track "grammar" is ALWAYS "common").
+- "common": for everyone — safety, emergencies, general communication, SMCP basics, and ALL grammar lessons (track "grammar" is ALWAYS "common"). Email lessons (track "email") are ALWAYS "common" too.
 
 OUTPUT: a JSON array of LESSON objects:
 {
   "lesson_title_en": "<English lesson title>",
   "lesson_title_el": "<Greek lesson title>",
   "lesson_description_el": "<one short Greek sentence describing the lesson>",
-  "track": "maritime" | "grammar",
+  "track": "maritime" | "grammar" | "email",
   "role_category": "engineer" | "deck" | "common",
   "items": [ <item objects, see schema below> ]
 }
@@ -111,17 +112,25 @@ LESSON STRUCTURE, SIZE & PACING (mandatory for every lesson)
 - SIZE: aim for 12-18 items per lesson. NEVER produce more than 20 items in a single lesson — this is a HARD limit. If the source material is large, SPLIT it into MULTIPLE separate lessons (each a coherent sub-topic) instead of one oversized lesson.
 - QUALITY OVER QUANTITY: only create an item if it teaches something distinct. If the material genuinely supports just 10 strong items, produce 10 — do NOT pad to hit a number. Twelve sharp, distinct items beat twenty with filler.
 - NO REPETITION (critical): every item MUST teach something DIFFERENT. Do NOT reuse the same word/phrase/concept across multiple items, and do NOT produce duplicate or near-duplicate exercises (e.g. the same sentence as both a fill_gap and a word_order, or several vocabulary items for the same word). Each item is unique.
-- ORDER the "items" array as a pedagogical build-up (this becomes the learner's sequence). Keep this structure, with a few DISTINCT items per phase:
+- ORDER the "items" array as a pedagogical build-up (this becomes the learner's sequence). Keep this structure, with a few DISTINCT items per phase. (EMAIL lessons follow the EMAIL WRITING LESSONS section instead of steps 4-5 below.)
   1. 1-2 "teaching" concept items (the explanation, as described above).
   2. RECOGNITION: a few distinct vocabulary and listening items (understand the material).
   3. PRODUCTION: a few distinct fill_gap and word_order items (use the material).
-  4. At least ONE speaking item (skill_type "speaking") — MANDATORY in every lesson, so the learner practises pronunciation.
-  5. At least ONE roleplay item (type "dialogue", skill_type "roleplay") at the END — applying the material in a realistic dialogue — whenever it fits the topic.
+  4. (maritime/grammar only) At least ONE speaking item (skill_type "speaking") — MANDATORY in those tracks, so the learner practises pronunciation.
+  5. (maritime/grammar only) At least ONE roleplay item (type "dialogue", skill_type "roleplay") at the END — applying the material in a realistic dialogue — whenever it fits the topic.
 - VARIETY: do not place many items of the same type back-to-back; alternate types so the lesson has rhythm.
+
+EMAIL WRITING LESSONS (track "email") — STRUCTURE (use ONLY existing item types; NO speaking, NO roleplay, NO listening, NO word_order):
+- email is WRITTEN, not spoken, so an email lesson must NOT contain any speaking, dialogue/roleplay or listening items.
+- 1-2 "teaching" items first: explain in Greek what this email is and WHEN you write it, and lay out its STRUCTURE — greeting -> context -> main point -> request -> closing. The teaching note must include a FULL example email (in English) annotated by section, with a clear Greek explanation. Use explanations.el.examples for 2-3 short bilingual phrase examples.
+- then "vocabulary" items for the SET EMAIL PHRASES as multiple choice (English fixed phrase -> pick the Greek meaning), e.g. "I am writing to inform you that...", "Please find attached...", "We kindly request...", "I look forward to your reply.". Same vocabulary shape (text/phonetic/answer/options) as below; distractors are other plausible email phrases' meanings.
+- then "fill_gap" items: a HALF/partial email with blanks where the learner picks the correct set phrase from the options (the gap_text shows the email with ___; "answer" is the correct phrase; "options" are 3-4 plausible email phrases).
+- close with more fill_gap or vocabulary — NOT speaking/roleplay. Keep the same 12-18 item sizing and NO-REPETITION rules.
 
 CRITICAL RULES
 - GRAMMAR items: explanations.el.note MUST contain a clear Greek explanation of the grammar rule the item practises — what the rule is, and how/when it is used — in simple words for a Greek beginner. This is mandatory for every grammar item.
 - MARITIME items: use realistic, correct maritime English and SMCP phrasing; the Greek note should briefly explain the term/usage in Greek.
+- EMAIL items: use real, professional email English and set phrases; the Greek note explains the phrase and when to use it. Never emit speaking/listening/roleplay/word_order items in an email lesson.
 - If the passage is from a WORKBOOK and already contains exercises with answers, CONVERT those existing exercises into this schema (keep their intent and answers) and ADD the Greek explanation — do not invent unrelated new exercises.
 - Use the source ONLY as a structural/topical reference — write original wording, never copy long sentences verbatim.
 - explanations.el text (translation/note/prompt) must be in Greek.
@@ -319,15 +328,15 @@ def item_signature(data):
 
 
 def _resolve_track(value, kind):
-    if kind in ("grammar", "maritime"):
+    if kind in ("grammar", "maritime", "email"):
         return kind
     track = (value or "").strip().lower()
     return track if track in ALLOWED_TRACKS else "maritime"
 
 
 def _resolve_role_category(value, track):
-    """Validate the model's role_category; grammar lessons are always common."""
-    if track == "grammar":
+    """Validate the model's role_category; grammar/email lessons are always common."""
+    if track in ("grammar", "email"):
         return "common"
     category = (value or "").strip().lower()
     return category if category in ALLOWED_ROLE_CATEGORIES else "common"
@@ -338,6 +347,14 @@ def _chunk_user_prompt(chunk, kind, known_titles):
         kind_line = 'The content kind is "grammar" (general English): set track="grammar".'
     elif kind == "maritime":
         kind_line = 'The content kind is "maritime": set track="maritime".'
+    elif kind == "email":
+        kind_line = (
+            'The content kind is "email" (professional email writing for seafarers): set '
+            'track="email" for every lesson and follow the EMAIL WRITING LESSONS structure '
+            "(teaching with a full example email, then set-phrase vocabulary, then fill_gap "
+            "on a partial email). Do NOT emit any speaking, roleplay/dialogue, listening or "
+            "word_order items."
+        )
     else:
         kind_line = (
             'The content kind is "auto": decide per lesson whether it is grammar or '

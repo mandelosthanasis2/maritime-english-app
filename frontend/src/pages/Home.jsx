@@ -9,6 +9,16 @@ const TRACK_META = {
   deck: { icon: '🧭', label: 'Deck' },
   cargo: { icon: '📦', label: 'Cargo' },
   safety: { icon: '🦺', label: 'Safety' },
+  email: { icon: '✉️', label: 'Email' },
+}
+
+// Email Writing is its own content track, shown as a dedicated home group
+// (alongside the role groups) rather than mixed into the maritime role buckets.
+const EMAIL_GROUP = {
+  key: 'email',
+  icon: '✉️',
+  kicker: 'Επαγγελματικά Αγγλικά',
+  title: 'Email Writing',
 }
 
 // The lesson list is organised by who the lesson is for. Unknown/missing
@@ -372,6 +382,7 @@ function Home() {
         lessons.length > 0 &&
         roleGroupOrder(progress?.user_role).map((group) => {
           const groupLessons = lessons.filter((lesson) => {
+            if (lesson.track === 'email') return false // shown in its own group
             const category =
               lesson.role_category === 'engineer' || lesson.role_category === 'deck'
                 ? lesson.role_category
@@ -406,6 +417,38 @@ function Home() {
             </section>
           )
         })}
+
+      {status === 'ready' &&
+        (() => {
+          const emailLessons = lessons.filter((lesson) => lesson.track === 'email')
+          if (emailLessons.length === 0) return null
+          return (
+            <section key={EMAIL_GROUP.key} className="home-section">
+              <header className="home-section__head">
+                <span
+                  className={`home-section__icon home-section__icon--${EMAIL_GROUP.key}`}
+                  aria-hidden="true"
+                >
+                  {EMAIL_GROUP.icon}
+                </span>
+                <span className="home-section__heading">
+                  <span className="home-section__kicker">{EMAIL_GROUP.kicker}</span>
+                  <h2 className="home-section__title">{EMAIL_GROUP.title}</h2>
+                </span>
+                <span className="home-section__count">{emailLessons.length}</span>
+              </header>
+              <div className="lesson-list">
+                {emailLessons.map((lesson) => (
+                  <LessonCard
+                    key={lesson.lesson_id}
+                    lesson={lesson}
+                    completed={completedSet.has(lesson.lesson_id)}
+                  />
+                ))}
+              </div>
+            </section>
+          )
+        })()}
 
       <ComingSoon />
     </div>
