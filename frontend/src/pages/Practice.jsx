@@ -53,7 +53,7 @@ export default function Practice() {
     // Gated items report their first-attempt outcome via onResult; display
     // items (vocabulary, listening, ...) count as practiced once continued —
     // recording them keeps the engine's cooldown rotating the content.
-    const correct = isGatedType(item.type) ? firstTryCorrect === true : true
+    const correct = isGatedType(item) ? firstTryCorrect === true : true
     setSaving(true)
     setDoneCount((d) => d + 1)
     if (correct) setCorrectCount((c) => c + 1)
@@ -152,7 +152,7 @@ export default function Practice() {
 
   // --- Playing ----------------------------------------------------------------
   const item = exercise.item
-  const gated = isGatedType(item.type)
+  const gated = isGatedType(item)
   const canContinue = (!gated || answered) && !saving
 
   return (

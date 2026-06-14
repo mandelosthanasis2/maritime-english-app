@@ -37,9 +37,21 @@ function shuffleChips(chips, targetText) {
   return out
 }
 
-// Item types that must be answered before the player lets the user continue.
-export function isGatedType(type) {
-  return type === 'fill_gap' || type === 'word_order'
+// Does a vocabulary item carry the multiple-choice exercise data?
+// Older vocabulary items (plain word + translation cards) have no options and
+// stay non-interactive display cards.
+function isVocabExercise(item) {
+  const options = item?.data?.english?.options
+  return Array.isArray(options) && options.length > 0
+}
+
+// Items that must be answered before the player lets the user continue. Takes
+// the full item so vocabulary can be gated only when it is a real exercise.
+export function isGatedType(item) {
+  const type = typeof item === 'string' ? item : item?.type
+  if (type === 'fill_gap' || type === 'word_order') return true
+  if (type === 'vocabulary' && typeof item !== 'string') return isVocabExercise(item)
+  return false
 }
 
 // Resolve the scrambled chips into the order that reconstructs the target
@@ -233,6 +245,104 @@ function FillGap({ english, el, onAnswered, onResult }) {
   )
 }
 
+// Vocabulary as a multiple-choice exercise: show the English word (with IPA and
+// TTS) and let the learner pick its Greek meaning from 3-4 options. Grading is
+// value-based against english.answer, so the shuffled order is safe (same
+// approach as FillGap / the choices we shuffled in #46). After answering, the
+// correct meaning is revealed alongside the pronunciation that was always shown.
+function VocabularyChoice({ english, el, onAnswered, onResult }) {
+  const [options] = useState(() =>
+    shuffle(Array.isArray(english.options) ? english.options : []),
+  )
+  const [selected, setSelected] = useState(null)
+  const [correct, setCorrect] = useState(false)
+  const [revealed, setRevealed] = useState(false)
+  const [eliminated, setEliminated] = useState([]) // wrong options hinted away
+  const [reported, setReported] = useState(false)
+
+  const done = correct || revealed
+  const correctOption = options.find((o) => normalize(o) === normalize(english.answer))
+  const hintsExhausted =
+    options.filter((o) => o !== correctOption && !eliminated.includes(o)).length === 0
+
+  function report(result) {
+    if (reported) return
+    setReported(true)
+    onResult?.(result)
+  }
+
+  function choose(option) {
+    if (done) return
+    setSelected(option)
+    const isCorrect = normalize(option) === normalize(english.answer)
+    report(isCorrect)
+    if (isCorrect) {
+      setCorrect(true)
+      onAnswered?.()
+    }
+  }
+
+  function hint() {
+    if (done) return
+    const wrong = options.find((o) => o !== correctOption && !eliminated.includes(o))
+    if (wrong) setEliminated((prev) => [...prev, wrong])
+  }
+
+  function showAnswer() {
+    if (done) return
+    report(false)
+    setRevealed(true)
+    onAnswered?.()
+  }
+
+  return (
+    <div className="interactive">
+      <p className="item-card__prompt">Διάλεξε τη σωστή σημασία:</p>
+      <p className="item-card__english">{english.text}</p>
+      {english.phonetic && <p className="item-card__phonetic">{english.phonetic}</p>}
+      <ListenButton text={english.text} />
+
+      <div className="options">
+        {options.map((option) => {
+          let cls = 'option'
+          if (correct && selected === option) cls += ' option--correct'
+          else if (revealed && option === correctOption) cls += ' option--revealed'
+          else if (!done && selected === option) cls += ' option--wrong'
+          else if (!done && eliminated.includes(option)) cls += ' option--eliminated'
+          return (
+            <button
+              key={option}
+              type="button"
+              className={cls}
+              onClick={() => choose(option)}
+              disabled={done || eliminated.includes(option)}
+            >
+              {option}
+            </button>
+          )
+        })}
+      </div>
+
+      {!done && (
+        <div className="help-actions">
+          <button type="button" className="help-btn" onClick={hint} disabled={hintsExhausted}>
+            💡 Βοήθεια
+          </button>
+          <button type="button" className="help-btn help-btn--reveal" onClick={showAnswer}>
+            Δες την απάντηση
+          </button>
+        </div>
+      )}
+
+      {correct && <p className="feedback feedback--correct">✓ Σωστά</p>}
+      {revealed && <p className="feedback feedback--revealed">Η σωστή σημασία 👆</p>}
+      {!done && selected && <p className="feedback feedback--wrong">Δοκίμασε ξανά</p>}
+
+      {done && <Reveal el={el} />}
+    </div>
+  )
+}
+
 function WordOrder({ english, el, onAnswered, onResult }) {
   // Shuffle once per mount, never showing the already-correct order. The
   // correct order is derived from english.text, so grading stays right.
@@ -400,6 +510,19 @@ export default function LessonItem({ item, onAnswered, onResult }) {
     switch (item.type) {
       case 'teaching':
         return <TeachingCard english={english} el={el} />
+      case 'vocabulary':
+        // New vocabulary items are a multiple-choice exercise; older ones (no
+        // options) stay simple word + translation display cards.
+        return isVocabExercise(item) ? (
+          <VocabularyChoice
+            english={english}
+            el={el}
+            onAnswered={onAnswered}
+            onResult={onResult}
+          />
+        ) : (
+          <DisplayItem english={english} el={el} />
+        )
       case 'fill_gap':
         return <FillGap english={english} el={el} onAnswered={onAnswered} onResult={onResult} />
       case 'word_order':
