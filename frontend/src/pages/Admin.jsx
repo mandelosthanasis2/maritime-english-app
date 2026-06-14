@@ -198,11 +198,12 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
   const [description, setDescription] = useState(group.description || '')
   const [track, setTrack] = useState(group.track || 'maritime')
   const [roleCategory, setRoleCategory] = useState(group.role_category || 'common')
+  const [source, setSource] = useState(group.source || '')
   const [busy, setBusy] = useState(null)
   const [note, setNote] = useState(null) // inline error shown ON this card
 
   function headerPayload() {
-    return { title, title_el: titleEl, description, track, role_category: roleCategory }
+    return { title, title_el: titleEl, description, source, track, role_category: roleCategory }
   }
 
   async function saveHeader() {
@@ -308,6 +309,12 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Περιγραφή (ελληνικά)"
+          />
+          <input
+            className="admin-input"
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            placeholder="Πηγή (π.χ. Deck Officers Vol.1 - Unit 3)"
           />
           <select className="admin-input" value={track} onChange={(e) => setTrack(e.target.value)}>
             {TRACKS.map((t) => <option key={t} value={t}>{TRACK_LABEL[t]}</option>)}
@@ -456,6 +463,38 @@ function ExistingLessonsPanel({ lessons, reload }) {
     }
   }
 
+  // Save the lesson's source tag (where the content came from) on blur,
+  // only when it actually changed.
+  async function saveSource(lessonId, value, original) {
+    if (value === (original || '')) return
+    try {
+      await adminEditLesson(lessonId, { source: value })
+      setNotes((n) => ({ ...n, [lessonId]: '✓ Η πηγή αποθηκεύτηκε.' }))
+      reload()
+    } catch (err) {
+      setNotes((n) => ({ ...n, [lessonId]: `Η αποθήκευση πηγής απέτυχε: ${err.message}` }))
+    }
+  }
+
+  async function remove(lessonId, title) {
+    // Hard delete (lesson + items + user stats/completions) — make the admin
+    // confirm against the title, since it cannot be undone.
+    const ok = window.confirm(
+      `Σίγουρα θες να διαγράψεις το '${title}'; Αυτό δεν αναιρείται.`,
+    )
+    if (!ok) return
+    setBusy(`${lessonId}:delete`)
+    setNotes((n) => ({ ...n, [lessonId]: null }))
+    try {
+      await adminDeleteLesson(lessonId)
+      reload()
+    } catch (err) {
+      setNotes((n) => ({ ...n, [lessonId]: `Η διαγραφή απέτυχε: ${err.message}` }))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   if (lessons.length === 0) return null
 
   return (
@@ -501,6 +540,13 @@ function ExistingLessonsPanel({ lessons, reload }) {
             >
               {ROLE_CATEGORIES.map((c) => <option key={c} value={c}>{ROLE_LABEL[c]}</option>)}
             </select>
+            <input
+              className="admin-input admin-input--compact admin-teach-row__source"
+              defaultValue={lesson.source || ''}
+              placeholder="Πηγή (π.χ. Deck Officers Vol.1 - Unit 3)"
+              aria-label="Πηγή"
+              onBlur={(e) => saveSource(lesson.lesson_id, e.target.value, lesson.source)}
+            />
             {notes[lesson.lesson_id] && (
               <p className="admin-teach-row__note">{notes[lesson.lesson_id]}</p>
             )}
@@ -530,6 +576,20 @@ function ExistingLessonsPanel({ lessons, reload }) {
                 </>
               ) : (
                 '➕ Εμπλούτισε μάθημα'
+              )}
+            </button>
+            <button
+              type="button"
+              className="admin-btn admin-btn--delete"
+              onClick={() => remove(lesson.lesson_id, lesson.title)}
+              disabled={busy !== null}
+            >
+              {busy === `${lesson.lesson_id}:delete` ? (
+                <>
+                  <span className="pa-spinner" aria-hidden="true" /> Διαγραφή…
+                </>
+              ) : (
+                '🗑 Διαγραφή'
               )}
             </button>
           </div>
