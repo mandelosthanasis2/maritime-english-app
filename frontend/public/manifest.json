@@ -1,0 +1,29 @@
+{
+  "name": "Marlingo",
+  "short_name": "Marlingo",
+  "description": "Maritime English — εκμάθηση αγγλικών για ναυτικούς",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#071622",
+  "theme_color": "#13384a",
+  "icons": [
+    {
+      "src": "/marlingo-icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/marlingo-icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/marlingo-icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+<svg width="512" height="512" viewBox="0 0 512 512" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Marlingo app icon</title>
+<desc>A navy rounded square containing a compass star with a gold speech bubble at its center.</desc>
+
+<rect x="0" y="0" width="512" height="512" rx="115" fill="#13384a"/>
+<g transform="translate(256, 256)">
+<polygon points="0,-186 38,-38 0,0 -38,-38" fill="#3a9bb0"/>
+<polygon points="0,186 38,38 0,0 -38,38" fill="#1B5566"/>
+<polygon points="186,0 38,38 0,0 38,-38" fill="#1B5566"/>
+<polygon points="-186,0 -38,38 0,0 -38,-38" fill="#1B5566"/>
+<polygon points="128,-128 44,-28 26,-26 28,-44" fill="#2E7C8C"/>
+<polygon points="-128,-128 -28,-44 -26,-26 -44,-28" fill="#2E7C8C"/>
+<polygon points="128,128 28,44 26,26 44,28" fill="#2E7C8C"/>
+<polygon points="-128,128 -44,28 -26,26 -28,44" fill="#2E7C8C"/>
+
+<path d="M -96,-72 Q -96,-116 -52,-116 L 52,-116 Q 96,-116 96,-72 L 96,12 Q 96,56 52,56 L -8,56 L -38,92 L -38,56 L -52,56 Q -96,56 -96,12 Z" fill="#C9A227"/>
+<rect x="-56" y="-72" width="112" height="15" rx="7.5" fill="#13384a"/>
+<rect x="-56" y="-34" width="112" height="15" rx="7.5" fill="#13384a"/>
+<rect x="-56" y="4" width="72" height="15" rx="7.5" fill="#13384a"/>
+</g>
+</svg>
