@@ -37,7 +37,7 @@ ALLOWED_ROLE_CATEGORIES = {"engineer", "deck", "common"}
 
 MAX_CHUNKS = 8
 TARGET_CHUNK_CHARS = 6000
-MAX_ITEMS_PER_CHUNK = 12
+MAX_ITEMS_PER_CHUNK = 20
 
 SYSTEM_PROMPT = """You are an expert English curriculum designer who creates practice items for Greek learners. You handle two kinds of content:
   - "maritime": maritime/nautical English grounded in IMO Standard Marine Communication Phrases (SMCP) and shipboard practice (engine room, bridge, deck, cargo, safety).
@@ -89,18 +89,19 @@ Each ITEM object:
 
 english shape by skill_type:
 - teaching: { "text": "<short English title of the concept>" }. The lesson body lives in explanations.el: "translation" = short Greek title, "note" = the detailed Greek explanation (the mini-lesson the learner reads), "examples" = [{"en": "<English example>", "el": "<Greek translation>"}, ...] with 2-3 entries.
-- vocabulary / speaking / listening: { "text": "<English>", "phonetic": "<IPA>" }
+- vocabulary: { "text": "<English word or short phrase>", "phonetic": "<IPA>", "answer": "<the correct Greek meaning>", "options": ["<correct Greek meaning>", "<plausible wrong meaning>", "<plausible wrong meaning>", "<plausible wrong meaning>"] }. This is a MULTIPLE-CHOICE exercise: the learner SEES the English word and PICKS its Greek meaning. Provide 3-4 options total with EXACTLY ONE correct; "answer" MUST appear verbatim among "options". Put the SAME correct Greek meaning in explanations.el.translation. The wrong options must be PLAUSIBLE — same domain and word class (e.g. other nautical terms for maritime, related everyday words for grammar) — never obviously unrelated or silly.
+- speaking / listening: { "text": "<English>", "phonetic": "<IPA>" }
 - fill_gap: { "text": "<full English sentence>", "gap_text": "<same sentence with ___ for the blank>", "answer": "<missing word>", "options": ["<answer>", "<distractor>", "<distractor>", "<distractor>"] }
 - word_order: { "text": "<full correct English sentence>", "scrambled": ["<word/chunk>", ...] }  (chunks must reconstruct text exactly; multi-word chunks allowed)
 - roleplay (use "type":"dialogue", "skill_type":"roleplay"): { "scenario": "<English>", "lines": [{"speaker": "...", "text": "<English>"}], "user_role": "<which speaker the learner plays>" }
 - translation (use "type":"translation", "skill_type":"speaking"): { "text": "<target English>" }, with the Greek source in explanations.el.prompt
 
 LESSON STRUCTURE, SIZE & PACING (mandatory for every lesson)
-- SIZE: each lesson MUST have 8-12 items — never fewer than 8. If the source passage is small, go DEEPER on the same material (more examples, more practice items covering the same vocabulary/rule) rather than emitting a tiny 3-item lesson. Never pad with off-topic content.
-- ORDER the "items" array as a pedagogical build-up (this becomes the learner's sequence):
+- SIZE: each lesson MUST have 15-20 items — a complete ~15-20 minute lesson — and NEVER fewer than 15. Be ADAPTIVE to the material: when the passage is rich, go toward 20; when it is more limited, still produce at least 15 by going DEEPER on the same material (more examples, more practice items covering the same vocabulary/rule). Going deeper is always preferred to a shorter lesson — never emit fewer than 15, and never pad with off-topic content.
+- ORDER the "items" array as a pedagogical build-up (this becomes the learner's sequence). Keep this same structure but put SEVERAL items in each phase to reach 15-20:
   1. 1-2 "teaching" concept items (the explanation, as described above).
-  2. RECOGNITION: vocabulary and listening items (understand the material).
-  3. PRODUCTION: fill_gap and word_order items (use the material).
+  2. RECOGNITION: several vocabulary and listening items (understand the material).
+  3. PRODUCTION: several fill_gap and word_order items (use the material).
   4. At least ONE speaking item (skill_type "speaking") — MANDATORY in every lesson, so the learner practises pronunciation.
   5. At least ONE roleplay item (type "dialogue", skill_type "roleplay") at the END — applying the material in a realistic dialogue — whenever it fits the topic.
 - VARIETY: do not place many items of the same type back-to-back; alternate types so the lesson has rhythm.
@@ -300,11 +301,14 @@ def _chunk_user_prompt(chunk, kind, known_titles):
         f"{kind_line}\n\n"
         f"{titles_block}"
         "Group the practice items you create from the passage below into one or more "
-        "lessons. Each lesson must have 8-12 items, ordered as a pedagogical build-up: "
-        "1-2 Greek 'teaching' concept items first, then recognition (vocabulary, "
-        "listening), then production (fill_gap, word_order), then at least one speaking "
-        "item, and a roleplay dialogue at the end where it fits. If the source is small, "
-        "go deeper on the same material instead of making a tiny lesson. If the passage "
+        "lessons. Each lesson must have 15-20 items (a ~15-20 minute lesson, never fewer "
+        "than 15), ordered as a pedagogical build-up: 1-2 Greek 'teaching' concept items "
+        "first, then several recognition items (vocabulary, listening), then several "
+        "production items (fill_gap, word_order), then at least one speaking item, and a "
+        "roleplay dialogue at the end where it fits. Vocabulary items are MULTIPLE-CHOICE "
+        "(English word -> pick the Greek meaning) with 3-4 plausible options. Be adaptive: "
+        "with rich material go toward 20; with limited material still reach at least 15 by "
+        "going deeper on the same material instead of making a tiny lesson. If the passage "
         "already contains exercises with answers, convert those. Grammar items must "
         "include a clear Greek rule explanation in explanations.el.note.\n\n"
         f"<source_passage>\n{chunk}\n</source_passage>\n\n"
@@ -316,7 +320,7 @@ def _generate_chunk_lessons(client, anthropic, chunk, kind, known_titles):
     try:
         response = client.messages.create(
             model=MODEL,
-            max_tokens=12000,
+            max_tokens=20000,
             system=SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": _chunk_user_prompt(chunk, kind, known_titles)}
@@ -633,8 +637,8 @@ def generate_teaching_for_lesson(title, track, digest):
 # missing, grounded in the lesson's own content. Existing items are never
 # touched — the new items are stored as drafts for review.
 
-ENRICH_TARGET_MIN = 8
-ENRICH_TARGET_MAX = 12
+ENRICH_TARGET_MIN = 15
+ENRICH_TARGET_MAX = 20
 # Varied exercise types used to fill a lesson up to the minimum size.
 ENRICH_EXERCISE_CYCLE = ("vocabulary", "fill_gap", "word_order", "listening")
 # Pedagogical order: recognition -> production -> speaking -> roleplay (last).
@@ -665,7 +669,8 @@ Each ITEM object:
 }
 
 english shape by skill_type:
-- vocabulary / speaking / listening: { "text": "<English>", "phonetic": "<IPA>" }
+- vocabulary: { "text": "<English word or short phrase>", "phonetic": "<IPA>", "answer": "<correct Greek meaning>", "options": ["<correct Greek meaning>", "<plausible wrong>", "<plausible wrong>", "<plausible wrong>"] }  (MULTIPLE-CHOICE: English word -> pick the Greek meaning; exactly ONE correct, "answer" appears verbatim in "options", same meaning also in explanations.el.translation; wrong options PLAUSIBLE, same domain/word class)
+- listening: { "text": "<English>", "phonetic": "<IPA>" }
 - fill_gap: { "text": "<full English sentence>", "gap_text": "<same sentence with ___ for the blank>", "answer": "<missing word>", "options": ["<answer>", "<distractor>", "<distractor>", "<distractor>"] }
 - word_order: { "text": "<full correct English sentence>", "scrambled": ["<word/chunk>", ...] }  (chunks must reconstruct text exactly)
 - speaking: { "text": "<short English phrase to say aloud>", "phonetic": "<IPA>" }
@@ -742,7 +747,7 @@ def generate_enrichment_items(title, track, role_category, digest, needed):
     try:
         response = client.messages.create(
             model=MODEL,
-            max_tokens=6000,
+            max_tokens=12000,
             system=ENRICH_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
             output_config={"effort": "medium"},

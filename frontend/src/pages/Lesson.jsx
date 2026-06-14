@@ -204,7 +204,7 @@ function Lesson() {
 
   // --- Playing -----------------------------------------------------------
   const item = items[step]
-  const gated = isGatedType(item.type)
+  const gated = isGatedType(item)
   const canContinue = !gated || answered
   const progress = Math.round(((step + 1) / total) * 100)
 
