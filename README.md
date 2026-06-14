@@ -1,4 +1,4 @@
-# Maritime English App
+# Marlingo — Maritime English App
 
 A monorepo skeleton for a maritime English learning app. This is just the
 empty plumbing — no real features or database yet.
