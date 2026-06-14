@@ -19,14 +19,15 @@ const ROLE_GROUPS = [
   { key: 'common', icon: '🤝', kicker: 'Βασικά', title: 'Κοινά για όλους' },
 ]
 
-// Naval ranks earned purely from existing XP — no backend involved. The user
-// climbs as their total XP crosses each threshold.
+// Levels earned purely from existing XP — no backend involved. The user
+// climbs as their total XP crosses each threshold. A consistent ⚓ icon sits
+// in the ring; the level number lives in the name.
 const RANKS = [
-  { name: 'Δόκιμος', min: 0, icon: '🪢' },
-  { name: 'Ναύτης', min: 100, icon: '⚓' },
-  { name: 'Ανθυποπλοίαρχος', min: 300, icon: '🧭' },
-  { name: 'Υποπλοίαρχος', min: 600, icon: '🎖️' },
-  { name: 'Πλοίαρχος', min: 1000, icon: '👑' },
+  { name: 'Επίπεδο 1', min: 0, icon: '⚓' },
+  { name: 'Επίπεδο 2', min: 100, icon: '⚓' },
+  { name: 'Επίπεδο 3', min: 300, icon: '⚓' },
+  { name: 'Επίπεδο 4', min: 600, icon: '⚓' },
+  { name: 'Επίπεδο 5', min: 1000, icon: '⚓' },
 ]
 
 function rankForXp(xp) {
@@ -99,14 +100,14 @@ function RankCard({ xp, loading }) {
         <span className="rank-ring__icon" aria-hidden="true">{rank.icon}</span>
       </div>
       <div className="rank-card__info">
-        <p className="rank-card__kicker">Ο βαθμός σου</p>
+        <p className="rank-card__kicker">Το επίπεδό σου</p>
         <p className="rank-card__name">{rank.name}</p>
         <p className="rank-card__next">
           {loading
             ? '…'
             : next
-              ? `${shownXp} XP · ${xpToNext} ως ${next.name}`
-              : `${shownXp} XP · Μέγιστος βαθμός! ⚓`}
+              ? `${shownXp} XP · ${xpToNext} ως το ${next.name}`
+              : `${shownXp} XP · Μέγιστο επίπεδο`}
         </p>
       </div>
     </div>
