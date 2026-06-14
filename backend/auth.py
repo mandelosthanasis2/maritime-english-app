@@ -16,6 +16,7 @@ Configure whichever your project uses (you can set both):
     fetch the public JWKS when tokens are signed with RS256/ES256).
 """
 
+import hmac
 import logging
 import os
 
@@ -152,15 +153,53 @@ def verify_request(request):
     return user_id, payload.get("email")
 
 
-def verify_admin(request):
-    """Verify the token AND that the caller is the configured admin.
+ADMIN_API_KEY_HEADER = "X-Admin-Key"
 
-    Returns (user_id, email). Raises AuthError(403) for non-admins, AuthError(503)
-    if ADMIN_EMAIL isn't configured.
 
-    Required env var: ADMIN_EMAIL — the email address allowed to use the admin
-    endpoints (matched case-insensitively against the verified token's email).
+def _api_key_admin(request):
+    """Return True if the request carries a valid admin API key.
+
+    A headless agent (no Supabase login) authenticates by sending the shared
+    secret in the `X-Admin-Key` header. The secret lives ONLY in the
+    ADMIN_API_KEY env var — never in code or git. When that env var is unset the
+    API-key path is fully disabled, so an absent header can never match an empty
+    configured value. The comparison is constant-time to avoid leaking the key
+    through response timing.
     """
+    configured = os.environ.get("ADMIN_API_KEY")
+    if not configured:
+        return False
+    provided = request.headers.get(ADMIN_API_KEY_HEADER, "")
+    if not provided:
+        return False
+    return hmac.compare_digest(provided, configured)
+
+
+def verify_admin(request):
+    """Authorize an admin caller via EITHER an API key OR a Supabase admin login.
+
+    Two ways to authenticate:
+      1. API key — `X-Admin-Key: <ADMIN_API_KEY>` header. Lets an external,
+         self-hosted agent reach the admin content-generation endpoints without a
+         Supabase session. Matches → access is granted immediately.
+      2. Supabase admin — a verified bearer token whose email equals ADMIN_EMAIL
+         (matched case-insensitively). This is the existing gating and stays the
+         fallback whenever the API key is absent or does not match.
+
+    Returns (user_id, email) — both None for the API-key path (there is no
+    Supabase user). Raises AuthError(403) for non-admins, AuthError(503) if
+    neither admin mechanism is configured.
+
+    Env vars:
+      - ADMIN_API_KEY — shared secret for the X-Admin-Key header (optional).
+      - ADMIN_EMAIL — the email allowed to use the admin endpoints (optional if
+        ADMIN_API_KEY is set, but at least one must be configured).
+    """
+    if _api_key_admin(request):
+        logger.info("admin access granted via %s", ADMIN_API_KEY_HEADER)
+        return None, None
+
+    # No (valid) API key → fall back to the existing Supabase admin gating.
     user_id, email = verify_request(request)
 
     admin_email = os.environ.get("ADMIN_EMAIL")

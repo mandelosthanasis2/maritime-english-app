@@ -23,8 +23,9 @@ from admin import (
     lesson_digest,
 )
 from adaptive import choose_next, choose_next_lesson
-from auth import AuthError, verify_admin, verify_request
+from auth import ADMIN_API_KEY_HEADER, AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
+from rate_limit import RateLimiter
 from models import Item, Lesson, UserItemStat, UserLessonCompletion, UserProgress
 from placement import (
     grade_answer,
@@ -37,6 +38,21 @@ from pronunciation import PronunciationError, assess_pronunciation
 from roleplay import RoleplayError, chat as roleplay_chat
 from transcription import transcribe
 from tts import synthesize as synthesize_speech
+
+# Rate limit for the expensive admin generation endpoint (per caller). Generous
+# enough never to bother a human admin in the /admin UI, but it caps a headless
+# agent's Claude usage. See rate_limit.py for the per-process caveat.
+_GENERATE_LIMITER = RateLimiter(max_calls=10, period=60)
+
+
+def _admin_rate_key(request):
+    """A per-caller key for rate limiting that never logs/stores the secret."""
+    api_key = request.headers.get(ADMIN_API_KEY_HEADER)
+    if api_key:
+        # Bucket all API-key traffic together without keying on the secret value.
+        return "admin-api-key"
+    return f"ip:{request.remote_addr or 'unknown'}"
+
 
 # XP awards.
 XP_FIRST_COMPLETION = 50
@@ -802,6 +818,14 @@ def admin_generate_items():
         verify_admin(request)
     except AuthError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
+
+    allowed, retry_after = _GENERATE_LIMITER.check(_admin_rate_key(request))
+    if not allowed:
+        resp = jsonify(
+            {"error": "Πάρα πολλά αιτήματα παραγωγής. Δοκίμασε ξανά σε λίγο."}
+        )
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp, 429
 
     # Accept multipart (PDF + fields) or a JSON body.
     js = request.get_json(silent=True) or {}
