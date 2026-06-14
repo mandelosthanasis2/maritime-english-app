@@ -814,6 +814,51 @@ def store_generated_item(session, raw, lesson_id, track, fallback_difficulty, or
     return row
 
 
+def dedup_lesson_in_session(session, lesson_id, cap=None):
+    """Remove duplicate items (and optionally cap) for a lesson, in `session`.
+
+    Uses the same content signature as generation/enrichment (#56): keep the
+    FIRST item of each duplicate group in pedagogical order (order_index, so
+    teaching stays first), delete the rest along with their per-item adaptive
+    stats. When `cap` is set, also trims to the first `cap` distinct items.
+
+    Flushes pending inserts so freshly-stored items are visible, but does NOT
+    commit. Returns (before, removed_count, remaining_count).
+    """
+    session.flush()
+    items = (
+        session.query(Item)
+        .filter_by(lesson_id=lesson_id)
+        .order_by(Item.order_index)
+        .all()
+    )
+    before = len(items)
+
+    seen = set()
+    kept, removed = [], []
+    for item in items:
+        sig = item_signature(item.data or {})
+        if sig and sig in seen:
+            removed.append(item)
+        else:
+            if sig:
+                seen.add(sig)
+            kept.append(item)
+
+    if cap is not None and len(kept) > cap:
+        removed.extend(kept[cap:])
+        kept = kept[:cap]
+
+    removed_ids = [i.item_id for i in removed]
+    if removed_ids:
+        session.query(UserItemStat).filter(
+            UserItemStat.item_id.in_(removed_ids)
+        ).delete(synchronize_session=False)
+        for item in removed:
+            session.delete(item)
+    return before, len(removed), len(kept)
+
+
 @app.route("/api/admin/generate-items", methods=["POST"])
 def admin_generate_items():
     try:
@@ -860,7 +905,7 @@ def admin_generate_items():
         return jsonify({"error": str(exc)}), exc.status_code
 
     try:
-        result = []
+        affected = []  # lessons we stored items into (unique, in order)
         for entry in proposed:
             if entry["existing_lesson_id"]:
                 lesson = (
@@ -892,16 +937,38 @@ def admin_generate_items():
                 .filter(Item.lesson_id == lesson.lesson_id)
                 .scalar()
             )
-            stored = []
             for offset, raw in enumerate(entry["items"], start=1):
-                stored.append(
-                    store_generated_item(
-                        session, raw, lesson.lesson_id, entry["track"], "B1", base + offset
-                    )
+                store_generated_item(
+                    session, raw, lesson.lesson_id, entry["track"], "B1", base + offset
                 )
-            result.append((lesson, stored))
+            if lesson not in affected:
+                affected.append(lesson)
+
+        # De-dup each affected lesson against ALL its items (existing + just
+        # stored). This makes the endpoint effectively idempotent at item level:
+        # if a timed-out call was retried and re-sent the same items, the
+        # duplicates are removed here instead of piling onto the lesson.
+        for lesson in affected:
+            _, removed, _ = dedup_lesson_in_session(session, lesson.lesson_id)
+            if removed:
+                logger.info(
+                    "generate-items: removed %d duplicate item(s) from lesson %s",
+                    removed,
+                    lesson.lesson_id,
+                )
 
         session.commit()
+
+        # Re-query each lesson's surviving items for the response (post-dedup).
+        result = []
+        for lesson in affected:
+            items = (
+                session.query(Item)
+                .filter_by(lesson_id=lesson.lesson_id)
+                .order_by(Item.order_index)
+                .all()
+            )
+            result.append((lesson, items))
         return jsonify({"lessons": [serialize_admin_lesson(l, items) for l, items in result]})
     except IntegrityError as exc:
         session.rollback()
@@ -1366,60 +1433,26 @@ def admin_dedup_lesson(lesson_id):
         if lesson is None:
             return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
 
-        # Pedagogical order (teaching first) is encoded by order_index.
-        items = (
-            session.query(Item)
-            .filter_by(lesson_id=lesson_id)
-            .order_by(Item.order_index)
-            .all()
+        # Dedup keeping the first of each duplicate group, then enforce the hard
+        # per-lesson cap (same as #56). Teaching stays first via order_index.
+        before, removed, remaining = dedup_lesson_in_session(
+            session, lesson_id, cap=MAX_ITEMS_PER_LESSON
         )
-        before = len(items)
-
-        # 1) De-duplicate: keep the first item of each content-signature group.
-        seen = set()
-        kept, removed = [], []
-        for item in items:
-            sig = item_signature(item.data or {})
-            if sig and sig in seen:
-                removed.append(item)
-            else:
-                if sig:
-                    seen.add(sig)
-                kept.append(item)
-
-        # 2) Hard per-lesson cap (same as #56): if too many distinct items
-        # remain, keep the first 20 in order; the overflow is removed too.
-        if len(kept) > MAX_ITEMS_PER_LESSON:
-            removed.extend(kept[MAX_ITEMS_PER_LESSON:])
-            kept = kept[:MAX_ITEMS_PER_LESSON]
-
-        removed_ids = [i.item_id for i in removed]
-        stats_deleted = 0
-        if removed_ids:
-            stats_deleted = (
-                session.query(UserItemStat)
-                .filter(UserItemStat.item_id.in_(removed_ids))
-                .delete(synchronize_session=False)
-            )
-            for item in removed:
-                session.delete(item)
         session.commit()
 
         logger.info(
-            "Deduped lesson %s: %d -> %d item(s) (%d removed, %d stat(s) cleared)",
+            "Deduped lesson %s: %d -> %d item(s) (%d removed)",
             lesson_id,
             before,
-            len(kept),
-            len(removed),
-            stats_deleted,
+            remaining,
+            removed,
         )
         return jsonify(
             {
                 "lesson_id": lesson_id,
                 "before": before,
-                "removed": len(removed),
-                "remaining": len(kept),
-                "stats_deleted": stats_deleted,
+                "removed": removed,
+                "remaining": remaining,
             }
         )
     except Exception:  # pragma: no cover - unexpected failure

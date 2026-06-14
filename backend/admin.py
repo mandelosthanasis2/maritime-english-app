@@ -44,6 +44,12 @@ IDEAL_ITEMS_MIN = 12
 IDEAL_ITEMS_MAX = 18
 MAX_ITEMS_PER_LESSON = 20
 
+# Explicit per-request timeout for the long generation/enrichment Claude calls
+# (large max_tokens). The Anthropic SDK's default is ~600s; we set this a bit
+# higher so a single big chunk has room to finish instead of erroring out and
+# making the caller retry. (gunicorn's --timeout is already 600s.)
+GENERATION_TIMEOUT_SECONDS = 900
+
 SYSTEM_PROMPT = """You are an expert English curriculum designer who creates practice items for Greek learners. You handle two kinds of content:
   - "maritime": maritime/nautical English grounded in IMO Standard Marine Communication Phrases (SMCP) and shipboard practice (engine room, bridge, deck, cargo, safety).
   - "grammar": general English grammar and vocabulary for everyday/learner use.
@@ -377,6 +383,7 @@ def _generate_chunk_lessons(client, anthropic, chunk, kind, known_titles):
                 {"role": "user", "content": _chunk_user_prompt(chunk, kind, known_titles)}
             ],
             output_config={"effort": "medium"},
+            timeout=GENERATION_TIMEOUT_SECONDS,
         )
     except anthropic.APIError as exc:
         logger.warning("Anthropic call failed for a chunk: %s", exc)
@@ -817,6 +824,7 @@ def generate_enrichment_items(title, track, role_category, digest, needed):
             system=ENRICH_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
             output_config={"effort": "medium"},
+            timeout=GENERATION_TIMEOUT_SECONDS,
         )
     except anthropic.APIError as exc:
         logger.warning("Anthropic call failed for enrichment: %s", exc)
