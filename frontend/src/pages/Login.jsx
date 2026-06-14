@@ -71,12 +71,12 @@ export default function Login() {
         <div className="auth-brand">
           <img
             className="auth-logo-full"
-            src="/marlingo-logo-full.svg"
+            src="/marlingo-logo-dark.svg"
             alt="Marlingo — Maritime English"
           />
         </div>
 
-        <p className="auth-tagline">Μάθε Αγγλικά για τη ζωή στη θάλασσα ⚓</p>
+        <p className="auth-tagline">Ναυτικά Αγγλικά για επαγγελματίες</p>
 
         <div className="auth-tabs">
           <button
