@@ -14,7 +14,7 @@ const CEFR_NOTE = {
   A2: 'Καταλαβαίνεις απλές προτάσεις και συχνές εκφράσεις.',
   B1: 'Τα πας καλά με τα καθημερινά Αγγλικά — ώρα να γίνουν πιο σταθερά.',
   B2: 'Έχεις άνεση στα Αγγλικά — θα δουλέψουμε πιο σύνθετες δομές.',
-  C1: 'Εξαιρετικό επίπεδο! Θα εστιάσουμε σε λεπτομέρειες και προχωρημένη χρήση.',
+  C1: 'Πολύ καλό επίπεδο. Θα εστιάσουμε σε λεπτομέρειες και προχωρημένη χρήση.',
 }
 
 const MARITIME_NOTE = {
@@ -258,8 +258,8 @@ export default function Placement({ gated = false, onDone }) {
           <div className="player__trophy">🌊</div>
           <h1 className="player__done-title">Δεν υπάρχουν αρκετές ερωτήσεις ακόμα</h1>
           <p className="player__done-sub">
-            Θα ξεκινήσεις από το βασικό επίπεδο — μπορείς να ξανακάνεις το τεστ
-            αργότερα από το μενού του λογαριασμού σου.
+            Θα ξεκινήσεις από το βασικό επίπεδο. Μπορείς να επαναλάβεις το τεστ
+            αργότερα από τις ρυθμίσεις του λογαριασμού σου.
           </p>
           <button type="button" className="player__start" onClick={finish}>
             Συνέχεια στα μαθήματα
@@ -327,7 +327,7 @@ export default function Placement({ gated = false, onDone }) {
             <p className="placement-result__note">{MARITIME_NOTE[maritime]}</p>
           </div>
           <p className="player__done-sub">
-            Τα μαθήματα θα προσαρμοστούν στο επίπεδό σου. Καλό ταξίδι! ⚓
+            Τα μαθήματα θα προσαρμοστούν στο επίπεδό σου.
           </p>
           <button type="button" className="player__start" onClick={finish}>
             Ξεκίνα τα μαθήματα

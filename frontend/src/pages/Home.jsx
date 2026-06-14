@@ -62,12 +62,7 @@ const COMING_SOON = [
 
 // One-line greeting — the recommendation card right below is the real hero.
 function Greeting() {
-  return (
-    <p className="home-greeting">
-      <span aria-hidden="true">⚓</span>
-      Καλώς ήρθες, ναυτικέ — καλό ταξίδι!
-    </p>
-  )
+  return <p className="home-greeting">Καλώς ήρθες</p>
 }
 
 // Naval rank with a progress ring toward the next rank. The ring fills from
@@ -263,7 +258,7 @@ function NextLessonCard() {
         <span aria-hidden="true">🌊</span>
         <span>
           {state === 'empty'
-            ? 'Δεν υπάρχουν νέα μαθήματα ακόμα — ξαναδές κάποιο από τη λίστα.'
+            ? 'Δεν υπάρχουν νέα προτεινόμενα μαθήματα. Επίλεξε ένα από τη λίστα.'
             : 'Δεν ήταν δυνατή η φόρτωση της πρότασης — διάλεξε μάθημα από τη λίστα.'}
         </span>
       </div>
@@ -274,16 +269,16 @@ function NextLessonCard() {
   return (
     <div className="next-card">
       <div className="next-card__body">
-        <p className="next-card__kicker">✨ Συνέχισε να μαθαίνεις</p>
+        <p className="next-card__kicker">Προτεινόμενο μάθημα</p>
         <h2 className="next-card__title">{lesson.title_el || lesson.title}</h2>
         {lesson.title_el && <p className="next-card__title-en">{lesson.title}</p>}
-        <p className="next-card__reason">Σου το προτείνω γιατί: {reason}</p>
+        <p className="next-card__reason">Γιατί αυτό το μάθημα: {reason}</p>
         <div className="next-card__actions">
           <Link to={`/lessons/${lesson.lesson_id}`} className="next-card__start">
             Ξεκίνα το μάθημα
           </Link>
           <Link to="/practice" className="next-card__alt">
-            ή κάνε ελεύθερη εξάσκηση →
+            Ελεύθερη εξάσκηση →
           </Link>
         </div>
       </div>
