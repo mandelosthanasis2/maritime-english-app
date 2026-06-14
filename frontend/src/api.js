@@ -285,6 +285,12 @@ export function adminEnrichLesson(lessonId) {
   })
 }
 
+export function adminDedupLesson(lessonId) {
+  return adminRequest(`/api/admin/lessons/${encodeURIComponent(lessonId)}/dedup`, {
+    method: 'POST',
+  })
+}
+
 export function adminApproveLesson(lessonId) {
   return adminRequest(`/api/admin/lessons/${encodeURIComponent(lessonId)}/approve`, {
     method: 'POST',

@@ -303,6 +303,15 @@ def _dedup_items(items):
     return out
 
 
+def item_signature(data):
+    """Public alias for the content signature of a stored item's `data` dict.
+
+    Lets the dedup endpoint reuse the exact same fingerprint as generation /
+    enrichment when cleaning duplicates out of an existing lesson.
+    """
+    return _item_signature(data)
+
+
 def _resolve_track(value, kind):
     if kind in ("grammar", "maritime"):
         return kind

@@ -12,6 +12,7 @@ from admin import (
     ALLOWED_ROLE_CATEGORIES,
     ALLOWED_SKILL_TYPES,
     ALLOWED_TRACKS,
+    MAX_ITEMS_PER_LESSON,
     AdminGenError,
     analyze_lesson_gaps,
     auto_categorize_lessons,
@@ -19,6 +20,7 @@ from admin import (
     generate_enrichment_items,
     generate_lessons,
     generate_teaching_for_lesson,
+    item_signature,
     lesson_category_samples,
     lesson_digest,
 )
@@ -1338,6 +1340,92 @@ def admin_enrich_lesson(lesson_id):
         session.rollback()
         logger.exception("Lesson enrichment failed")
         return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/lessons/<lesson_id>/dedup", methods=["POST"])
+def admin_dedup_lesson(lesson_id):
+    """Remove duplicate/repeated items from an EXISTING lesson in place.
+
+    Uses the same content signature as generation/enrichment (#56): keep the
+    FIRST item of each duplicate group, delete the rest. If more than 20 distinct
+    items remain, keep the first 20 in pedagogical order (teaching first, since
+    items are ordered by order_index). Unique items are never touched. Removed
+    items and their per-item adaptive stats are deleted (like the delete
+    endpoint); the approve flow and user-facing AI are not involved.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
+        if lesson is None:
+            return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
+
+        # Pedagogical order (teaching first) is encoded by order_index.
+        items = (
+            session.query(Item)
+            .filter_by(lesson_id=lesson_id)
+            .order_by(Item.order_index)
+            .all()
+        )
+        before = len(items)
+
+        # 1) De-duplicate: keep the first item of each content-signature group.
+        seen = set()
+        kept, removed = [], []
+        for item in items:
+            sig = item_signature(item.data or {})
+            if sig and sig in seen:
+                removed.append(item)
+            else:
+                if sig:
+                    seen.add(sig)
+                kept.append(item)
+
+        # 2) Hard per-lesson cap (same as #56): if too many distinct items
+        # remain, keep the first 20 in order; the overflow is removed too.
+        if len(kept) > MAX_ITEMS_PER_LESSON:
+            removed.extend(kept[MAX_ITEMS_PER_LESSON:])
+            kept = kept[:MAX_ITEMS_PER_LESSON]
+
+        removed_ids = [i.item_id for i in removed]
+        stats_deleted = 0
+        if removed_ids:
+            stats_deleted = (
+                session.query(UserItemStat)
+                .filter(UserItemStat.item_id.in_(removed_ids))
+                .delete(synchronize_session=False)
+            )
+            for item in removed:
+                session.delete(item)
+        session.commit()
+
+        logger.info(
+            "Deduped lesson %s: %d -> %d item(s) (%d removed, %d stat(s) cleared)",
+            lesson_id,
+            before,
+            len(kept),
+            len(removed),
+            stats_deleted,
+        )
+        return jsonify(
+            {
+                "lesson_id": lesson_id,
+                "before": before,
+                "removed": len(removed),
+                "remaining": len(kept),
+                "stats_deleted": stats_deleted,
+            }
+        )
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Dedup lesson failed")
+        return jsonify({"error": "Internal error during dedup."}), 500
     finally:
         session.close()
 

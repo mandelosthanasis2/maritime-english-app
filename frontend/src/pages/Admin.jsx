@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   adminApproveLesson,
   adminAutoCategorize,
+  adminDedupLesson,
   adminDeleteItem,
   adminDeleteLesson,
   adminDraftLessons,
@@ -450,6 +451,31 @@ function ExistingLessonsPanel({ lessons, reload }) {
     }
   }
 
+  async function dedup(lessonId, title) {
+    const ok = window.confirm(
+      `Θα αφαιρεθούν οι διπλές ασκήσεις από το '${title}'. Συνέχεια;`,
+    )
+    if (!ok) return
+    setBusy(`${lessonId}:dedup`)
+    setNotes((n) => ({ ...n, [lessonId]: null }))
+    try {
+      const res = await adminDedupLesson(lessonId)
+      const removed = res.removed || 0
+      setNotes((n) => ({
+        ...n,
+        [lessonId]:
+          removed === 0
+            ? '✓ Δεν βρέθηκαν διπλές ασκήσεις.'
+            : `✓ Αφαιρέθηκαν ${removed} ${removed === 1 ? 'διπλή' : 'διπλές'}, έμειναν ${res.remaining}.`,
+      }))
+      if (removed) reload()
+    } catch (err) {
+      setNotes((n) => ({ ...n, [lessonId]: `Ο καθαρισμός απέτυχε: ${err.message}` }))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   async function changeCategory(lessonId, value) {
     setCategories((c) => ({ ...c, [lessonId]: value }))
     setNotes((n) => ({ ...n, [lessonId]: null }))
@@ -576,6 +602,20 @@ function ExistingLessonsPanel({ lessons, reload }) {
                 </>
               ) : (
                 '➕ Εμπλούτισε μάθημα'
+              )}
+            </button>
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost"
+              onClick={() => dedup(lesson.lesson_id, lesson.title)}
+              disabled={busy !== null}
+            >
+              {busy === `${lesson.lesson_id}:dedup` ? (
+                <>
+                  <span className="pa-spinner" aria-hidden="true" /> Καθαρισμός…
+                </>
+              ) : (
+                '🧹 Καθάρισε διπλές'
               )}
             </button>
             <button
