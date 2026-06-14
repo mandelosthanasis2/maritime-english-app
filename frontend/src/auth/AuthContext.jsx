@@ -39,7 +39,11 @@ export function AuthProvider({ children }) {
 
   async function signUp(email, password) {
     if (!supabase) return { error: new Error('not_configured') }
-    return supabase.auth.signUp({ email, password })
+    // Point the confirmation link at whatever domain the user is on (e.g.
+    // marlingo.app), instead of relying solely on the Supabase Site URL.
+    const emailRedirectTo =
+      typeof window !== 'undefined' ? window.location.origin : undefined
+    return supabase.auth.signUp({ email, password, options: { emailRedirectTo } })
   }
 
   async function signIn(email, password) {
