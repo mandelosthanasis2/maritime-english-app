@@ -85,6 +85,7 @@ def serialize_lesson_meta(lesson, item_count):
         "module": lesson.module,
         "title": lesson.title,
         "description": lesson.description,
+        "source": lesson.source,
         "interface_language": lesson.interface_language,
         "target_language": lesson.target_language,
         "version": lesson.version,
@@ -750,6 +751,7 @@ def serialize_admin_lesson(lesson, items):
         "title": lesson.title,
         "title_el": lesson.title_el,
         "description": lesson.description,
+        "source": lesson.source,
         "track": lesson.track,
         "role_category": lesson.role_category or "common",
         "status": lesson.status,
@@ -1369,6 +1371,8 @@ def admin_edit_lesson(lesson_id):
             lesson.title_el = payload["title_el"]
         if "description" in payload:
             lesson.description = payload["description"]
+        if "source" in payload:
+            lesson.source = payload["source"]
         if "track" in payload:
             if payload["track"] not in ALLOWED_TRACKS:
                 # Legacy lessons carry tracks like "engine"; a client that
@@ -1419,12 +1423,52 @@ def admin_delete_lesson(lesson_id):
         lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
         if lesson is None:
             return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
-        if lesson.status != "draft":
-            return jsonify({"error": "Only draft lessons can be deleted."}), 409
-        # Cascades to its items via the relationship.
+
+        # Capture before deletion (attributes expire after commit).
+        title = lesson.title
+        items = session.query(Item).filter_by(lesson_id=lesson_id).all()
+        item_ids = [i.item_id for i in items]
+        item_count = len(items)
+
+        # Remove dependent user records that have no DB-level FK to cascade:
+        # per-item adaptive stats and per-lesson completions. UserProgress
+        # (global XP/streak/placement) is intentionally left untouched.
+        stats_deleted = 0
+        if item_ids:
+            stats_deleted = (
+                session.query(UserItemStat)
+                .filter(UserItemStat.item_id.in_(item_ids))
+                .delete(synchronize_session=False)
+            )
+        completions_deleted = (
+            session.query(UserLessonCompletion)
+            .filter_by(lesson_id=lesson_id)
+            .delete(synchronize_session=False)
+        )
+
+        # Delete the lesson; its items cascade via the relationship.
         session.delete(lesson)
         session.commit()
-        return jsonify({"deleted": lesson_id})
+        logger.info(
+            "Deleted lesson %s (%d item(s), %d stat(s), %d completion(s))",
+            lesson_id,
+            item_count,
+            stats_deleted,
+            completions_deleted,
+        )
+        return jsonify(
+            {
+                "deleted": lesson_id,
+                "title": title,
+                "items_deleted": item_count,
+                "stats_deleted": stats_deleted,
+                "completions_deleted": completions_deleted,
+            }
+        )
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Deleting lesson failed")
+        return jsonify({"error": "Internal error deleting lesson."}), 500
     finally:
         session.close()
 

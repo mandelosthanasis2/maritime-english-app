@@ -3753,3 +3753,9 @@ textarea {
   height: auto;
   margin: 0 auto;
 }
+
+/* Source tag input in the existing-lessons row (grows to fill the row). */
+.admin-teach-row__source {
+  flex: 1 1 12rem;
+  min-width: 10rem;
+}
