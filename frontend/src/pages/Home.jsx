@@ -21,6 +21,14 @@ const EMAIL_GROUP = {
   title: 'Email Writing',
 }
 
+// Top-level "learning paths" the home splits into. "maritime" bundles the
+// maritime + grammar tracks (shown as role groups); "email" is the email track.
+// Adding a future path is just another entry here plus its grouping below.
+const LEARNING_PATHS = [
+  { key: 'maritime', icon: '📘', label: 'Ναυτικά Αγγλικά' },
+  { key: 'email', icon: '✉️', label: 'Email Writing' },
+]
+
 // The lesson list is organised by who the lesson is for. Unknown/missing
 // categories fall back to "common" so nothing ever disappears from the home.
 const ROLE_GROUPS = [
@@ -301,8 +309,41 @@ function NextLessonCard() {
   )
 }
 
+// One titled group of lesson cards (a role group, or the email group). Renders
+// nothing when the group has no lessons.
+function LessonSection({ group, lessons, completedSet }) {
+  if (lessons.length === 0) return null
+  return (
+    <section className="home-section">
+      <header className="home-section__head">
+        <span
+          className={`home-section__icon home-section__icon--${group.key}`}
+          aria-hidden="true"
+        >
+          {group.icon}
+        </span>
+        <span className="home-section__heading">
+          <span className="home-section__kicker">{group.kicker}</span>
+          <h2 className="home-section__title">{group.title}</h2>
+        </span>
+        <span className="home-section__count">{lessons.length}</span>
+      </header>
+      <div className="lesson-list">
+        {lessons.map((lesson) => (
+          <LessonCard
+            key={lesson.lesson_id}
+            lesson={lesson}
+            completed={completedSet.has(lesson.lesson_id)}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function Home() {
   const [lessons, setLessons] = useState([])
+  const [activePath, setActivePath] = useState('maritime')
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
 
@@ -380,73 +421,65 @@ function Home() {
 
       {status === 'ready' &&
         lessons.length > 0 &&
-        roleGroupOrder(progress?.user_role).map((group) => {
-          const groupLessons = lessons.filter((lesson) => {
-            if (lesson.track === 'email') return false // shown in its own group
-            const category =
-              lesson.role_category === 'engineer' || lesson.role_category === 'deck'
-                ? lesson.role_category
-                : 'common'
-            return category === group.key
-          })
-          if (groupLessons.length === 0) return null
-          return (
-            <section key={group.key} className="home-section">
-              <header className="home-section__head">
-                <span
-                  className={`home-section__icon home-section__icon--${group.key}`}
-                  aria-hidden="true"
-                >
-                  {group.icon}
-                </span>
-                <span className="home-section__heading">
-                  <span className="home-section__kicker">{group.kicker}</span>
-                  <h2 className="home-section__title">{group.title}</h2>
-                </span>
-                <span className="home-section__count">{groupLessons.length}</span>
-              </header>
-              <div className="lesson-list">
-                {groupLessons.map((lesson) => (
-                  <LessonCard
-                    key={lesson.lesson_id}
-                    lesson={lesson}
-                    completed={completedSet.has(lesson.lesson_id)}
-                  />
-                ))}
-              </div>
-            </section>
-          )
-        })}
-
-      {status === 'ready' &&
         (() => {
+          // Split lessons into the two learning paths; "maritime" path bundles
+          // the maritime + grammar tracks (everything that isn't email).
           const emailLessons = lessons.filter((lesson) => lesson.track === 'email')
-          if (emailLessons.length === 0) return null
+          const maritimeLessons = lessons.filter((lesson) => lesson.track !== 'email')
+          const pathLessons = { maritime: maritimeLessons, email: emailLessons }
+
+          // Only offer a tab for a path that actually has lessons.
+          const availablePaths = LEARNING_PATHS.filter(
+            (p) => pathLessons[p.key].length > 0,
+          )
+          const currentPath = availablePaths.some((p) => p.key === activePath)
+            ? activePath
+            : availablePaths[0]?.key
+
           return (
-            <section key={EMAIL_GROUP.key} className="home-section">
-              <header className="home-section__head">
-                <span
-                  className={`home-section__icon home-section__icon--${EMAIL_GROUP.key}`}
-                  aria-hidden="true"
-                >
-                  {EMAIL_GROUP.icon}
-                </span>
-                <span className="home-section__heading">
-                  <span className="home-section__kicker">{EMAIL_GROUP.kicker}</span>
-                  <h2 className="home-section__title">{EMAIL_GROUP.title}</h2>
-                </span>
-                <span className="home-section__count">{emailLessons.length}</span>
-              </header>
-              <div className="lesson-list">
-                {emailLessons.map((lesson) => (
-                  <LessonCard
-                    key={lesson.lesson_id}
-                    lesson={lesson}
-                    completed={completedSet.has(lesson.lesson_id)}
+            <>
+              {availablePaths.length > 1 && (
+                <div className="home-tabs" role="tablist" aria-label="Διαδρομές μάθησης">
+                  {availablePaths.map((p) => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={currentPath === p.key}
+                      className={`home-tab${currentPath === p.key ? ' home-tab--active' : ''}`}
+                      onClick={() => setActivePath(p.key)}
+                    >
+                      <span aria-hidden="true">{p.icon}</span> {p.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {currentPath === 'maritime' &&
+                roleGroupOrder(progress?.user_role).map((group) => (
+                  <LessonSection
+                    key={group.key}
+                    group={group}
+                    lessons={maritimeLessons.filter((lesson) => {
+                      const category =
+                        lesson.role_category === 'engineer' ||
+                        lesson.role_category === 'deck'
+                          ? lesson.role_category
+                          : 'common'
+                      return category === group.key
+                    })}
+                    completedSet={completedSet}
                   />
                 ))}
-              </div>
-            </section>
+
+              {currentPath === 'email' && (
+                <LessonSection
+                  group={EMAIL_GROUP}
+                  lessons={emailLessons}
+                  completedSet={completedSet}
+                />
+              )}
+            </>
           )
         })()}
 
