@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import PronunciationPractice from './PronunciationPractice.jsx'
 import RolePlay from './RolePlay.jsx'
 import useTts from '../useTts.js'
+import { emailFeedback } from '../api.js'
 
 // Robust comparison: trim, lowercase, collapse whitespace, drop punctuation.
 function normalize(value) {
@@ -50,6 +51,7 @@ function isVocabExercise(item) {
 export function isGatedType(item) {
   const type = typeof item === 'string' ? item : item?.type
   if (type === 'fill_gap' || type === 'word_order') return true
+  if (type === 'email_compose') return true // must submit to get feedback
   if (type === 'vocabulary' && typeof item !== 'string') return isVocabExercise(item)
   return false
 }
@@ -343,6 +345,108 @@ function VocabularyChoice({ english, el, onAnswered, onResult }) {
   )
 }
 
+// Email composition with AI feedback — the capstone of an email lesson. The
+// learner reads a Greek scenario, writes the email, and submits it; the backend
+// asks Claude (same infra as role-play) for encouraging, specific Greek feedback
+// plus an improved English version. Submitting satisfies the gate and counts as
+// a completed attempt (the lesson awards XP on completion; the feedback is the
+// real value, so there is no harsh right/wrong score).
+function EmailCompose({ english, onAnswered, onResult }) {
+  const scenario = english.scenario || ''
+  const instructions = english.instructions || ''
+  const [text, setText] = useState('')
+  const [status, setStatus] = useState('idle') // idle | loading | done | error
+  const [feedback, setFeedback] = useState(null)
+  const [error, setError] = useState(null)
+
+  async function submit() {
+    if (!text.trim() || status === 'loading') return
+    setStatus('loading')
+    setError(null)
+    try {
+      const res = await emailFeedback({ scenario, instructions, emailText: text })
+      setFeedback(res)
+      setStatus('done')
+      onResult?.(true) // effort-based: a submitted attempt counts as done
+      onAnswered?.()
+    } catch (err) {
+      setError(err.message)
+      setStatus('error')
+    }
+  }
+
+  function rewrite() {
+    // Keep the gate satisfied; let the learner revise and resubmit.
+    setFeedback(null)
+    setStatus('idle')
+    setError(null)
+  }
+
+  return (
+    <div className="interactive ec">
+      <div className="ec-scenario">
+        <span className="ec-scenario__label">✍️ Γράψε το email</span>
+        {scenario && <p className="ec-scenario__text">{scenario}</p>}
+        {instructions && <p className="ec-scenario__hint">{instructions}</p>}
+      </div>
+
+      <textarea
+        className="ec-textarea"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Γράψε εδώ το email σου στα αγγλικά…"
+        rows={9}
+        disabled={status === 'loading'}
+      />
+
+      {status !== 'done' && (
+        <button
+          type="button"
+          className="btn btn--primary ec-submit"
+          onClick={submit}
+          disabled={!text.trim() || status === 'loading'}
+        >
+          {status === 'loading' ? (
+            <>
+              <span className="pa-spinner" aria-hidden="true" /> Έλεγχος…
+            </>
+          ) : (
+            '📨 Υπόβαλε για έλεγχο'
+          )}
+        </button>
+      )}
+
+      {error && <p className="feedback feedback--wrong">{error}</p>}
+
+      {feedback && (
+        <div className="ec-feedback">
+          {feedback.good && (
+            <div className="ec-card ec-card--good">
+              <h4 className="ec-card__title">✅ Τι πήγε καλά</h4>
+              <p className="ec-card__body">{feedback.good}</p>
+            </div>
+          )}
+          {feedback.improve && (
+            <div className="ec-card ec-card--improve">
+              <h4 className="ec-card__title">✏️ Τι να βελτιώσεις</h4>
+              <p className="ec-card__body">{feedback.improve}</p>
+            </div>
+          )}
+          {feedback.suggestion && (
+            <div className="ec-card ec-card--suggestion">
+              <h4 className="ec-card__title">💡 Προτεινόμενη εκδοχή</h4>
+              <p className="ec-card__body ec-card__body--email">{feedback.suggestion}</p>
+            </div>
+          )}
+          <button type="button" className="btn btn--ghost ec-rewrite" onClick={rewrite}>
+            ✏️ Ξαναγράψε & δοκίμασε πάλι
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function WordOrder({ english, el, onAnswered, onResult }) {
   // Shuffle once per mount, never showing the already-correct order. The
   // correct order is derived from english.text, so grading stays right.
@@ -523,6 +627,8 @@ export default function LessonItem({ item, onAnswered, onResult }) {
         ) : (
           <DisplayItem english={english} el={el} />
         )
+      case 'email_compose':
+        return <EmailCompose english={english} onAnswered={onAnswered} onResult={onResult} />
       case 'fill_gap':
         return <FillGap english={english} el={el} onAnswered={onAnswered} onResult={onResult} />
       case 'word_order':

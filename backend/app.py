@@ -27,6 +27,7 @@ from admin import (
 from adaptive import choose_next, choose_next_lesson
 from auth import ADMIN_API_KEY_HEADER, AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
+from email_feedback import EmailFeedbackError, generate_feedback as email_feedback
 from rate_limit import RateLimiter
 from models import Item, Lesson, UserItemStat, UserLessonCompletion, UserProgress
 from placement import (
@@ -322,6 +323,29 @@ def roleplay_chat_route():
     except Exception:  # pragma: no cover - unexpected failure
         logger.exception("Role-play chat failed unexpectedly")
         return jsonify({"error": "Internal error during role-play."}), 500
+
+
+@app.route("/api/email/feedback", methods=["POST"])
+def email_feedback_route():
+    """AI feedback on a learner's written email (email_compose items).
+
+    Body: {"scenario": <Greek task>, "instructions": <Greek guidance>,
+    "email_text": <the learner's email>}. Returns {good, improve, suggestion}.
+    """
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        result = email_feedback(
+            scenario=payload.get("scenario", ""),
+            instructions=payload.get("instructions", ""),
+            email_text=payload.get("email_text", ""),
+        )
+        return jsonify(result)
+    except EmailFeedbackError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    except Exception:  # pragma: no cover - unexpected failure
+        logger.exception("Email feedback failed unexpectedly")
+        return jsonify({"error": "Internal error during email feedback."}), 500
 
 
 @app.route("/api/me/progress", methods=["GET"])

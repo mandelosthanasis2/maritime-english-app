@@ -410,6 +410,115 @@ h3 {
   margin-top: 0.9rem;
 }
 
+/* Email composition with AI feedback (email_compose capstone item). */
+.ec-scenario {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 0.85rem 0.95rem;
+  margin-bottom: 0.8rem;
+}
+
+.ec-scenario__label {
+  display: inline-block;
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--teal);
+  margin-bottom: 0.35rem;
+}
+
+.ec-scenario__text {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.ec-scenario__hint {
+  margin: 0.5rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.ec-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 9.5rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.ec-textarea:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: var(--glow-teal);
+}
+
+.ec-submit {
+  margin-top: 0.8rem;
+}
+
+.ec-feedback {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ec-card {
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--r-md);
+  padding: 0.8rem 0.95rem;
+  background: var(--surface);
+}
+
+.ec-card--good {
+  border-left-color: var(--correct);
+  background: var(--correct-bg);
+}
+
+.ec-card--improve {
+  border-left-color: var(--amber);
+  background: var(--amber-bg);
+}
+
+.ec-card--suggestion {
+  border-left-color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.ec-card__title {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-head);
+  font-size: 0.98rem;
+  color: var(--heading);
+}
+
+.ec-card__body {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ec-card__body--email {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92rem;
+}
+
+.ec-rewrite {
+  align-self: flex-start;
+}
+
 /* Option buttons (fill_gap) */
 .options {
   display: flex;
