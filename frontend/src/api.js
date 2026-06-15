@@ -382,6 +382,29 @@ export async function roleplayChat({ itemId, scenario, userRole, history, userMe
   return res.json()
 }
 
+export async function emailFeedback({ scenario, instructions, emailText }) {
+  const res = await fetch(`${API_BASE_URL}/api/email/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scenario,
+      instructions,
+      email_text: emailText,
+    }),
+  })
+  if (!res.ok) {
+    let message = `Σφάλμα AI feedback (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // not JSON; keep the generic message
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
 export async function transcribeAudio(audioBlob) {
   const form = new FormData()
   form.append('audio', audioBlob, 'speech.webm')

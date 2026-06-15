@@ -30,6 +30,7 @@ ALLOWED_SKILL_TYPES = {
     "word_order",
     "speaking",
     "roleplay",
+    "email_compose",
 }
 ALLOWED_KINDS = {"auto", "grammar", "maritime", "email"}
 ALLOWED_TRACKS = {"grammar", "maritime", "email"}
@@ -88,10 +89,10 @@ OUTPUT: a JSON array of LESSON objects:
 
 Each ITEM object:
 {
-  "type": "teaching" | "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "dialogue" | "translation",
+  "type": "teaching" | "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "dialogue" | "translation" | "email_compose",
   "level": CEFR band "A1|A2|B1|B2|C1",
   "difficulty": same CEFR band,
-  "skill_type": "teaching" | "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "roleplay",
+  "skill_type": "teaching" | "vocabulary" | "listening" | "fill_gap" | "word_order" | "speaking" | "roleplay" | "email_compose",
   "ship_types": array of strings (use ["all"] for general grammar),
   "english": { ... shape depends on skill_type, see below ... },
   "explanations": { "el": { "translation": "<Greek>", "note": "<Greek note, see rules>", "prompt": "<optional Greek prompt for translation items>", "examples": [<teaching items only, see below>] } },
@@ -107,6 +108,7 @@ english shape by skill_type:
 - word_order: { "text": "<full correct English sentence>", "scrambled": ["<word/chunk>", ...] }  (chunks must reconstruct text exactly; multi-word chunks allowed)
 - roleplay (use "type":"dialogue", "skill_type":"roleplay"): { "scenario": "<English>", "lines": [{"speaker": "...", "text": "<English>"}], "user_role": "<which speaker the learner plays>" }
 - translation (use "type":"translation", "skill_type":"speaking"): { "text": "<target English>" }, with the Greek source in explanations.el.prompt
+- email_compose (EMAIL lessons only; use "type":"email_compose","skill_type":"email_compose"): { "scenario": "<the writing task, described IN GREEK — e.g. 'Η γεννήτρια Νο.2 σταμάτησε λόγω υπερθέρμανσης. Γράψε email στην εταιρεία να αναφέρεις το πρόβλημα.'>", "instructions": "<optional GREEK guidance: the key points the email should include>" }. NO answer, NO options — the learner writes a free-text email that is assessed by AI feedback, not auto-checked.
 
 LESSON STRUCTURE, SIZE & PACING (mandatory for every lesson)
 - SIZE: aim for 12-18 items per lesson. NEVER produce more than 20 items in a single lesson — this is a HARD limit. If the source material is large, SPLIT it into MULTIPLE separate lessons (each a coherent sub-topic) instead of one oversized lesson.
@@ -120,12 +122,13 @@ LESSON STRUCTURE, SIZE & PACING (mandatory for every lesson)
   5. (maritime/grammar only) At least ONE roleplay item (type "dialogue", skill_type "roleplay") at the END — applying the material in a realistic dialogue — whenever it fits the topic.
 - VARIETY: do not place many items of the same type back-to-back; alternate types so the lesson has rhythm.
 
-EMAIL WRITING LESSONS (track "email") — STRUCTURE (use ONLY existing item types; NO speaking, NO roleplay, NO listening, NO word_order):
+EMAIL WRITING LESSONS (track "email") — STRUCTURE (allowed item types: teaching, vocabulary, fill_gap, and ONE email_compose; NO speaking, NO roleplay, NO listening, NO word_order):
 - email is WRITTEN, not spoken, so an email lesson must NOT contain any speaking, dialogue/roleplay or listening items.
 - 1-2 "teaching" items first: explain in Greek what this email is and WHEN you write it, and lay out its STRUCTURE — greeting -> context -> main point -> request -> closing. The teaching note must include a FULL example email (in English) annotated by section, with a clear Greek explanation. Use explanations.el.examples for 2-3 short bilingual phrase examples.
 - then "vocabulary" items for the SET EMAIL PHRASES as multiple choice (English fixed phrase -> pick the Greek meaning), e.g. "I am writing to inform you that...", "Please find attached...", "We kindly request...", "I look forward to your reply.". Same vocabulary shape (text/phonetic/answer/options) as below; distractors are other plausible email phrases' meanings.
 - then "fill_gap" items: a HALF/partial email with blanks where the learner picks the correct set phrase from the options (the gap_text shows the email with ___; "answer" is the correct phrase; "options" are 3-4 plausible email phrases).
-- close with more fill_gap or vocabulary — NOT speaking/roleplay. Keep the same 12-18 item sizing and NO-REPETITION rules.
+- END the lesson with EXACTLY ONE "email_compose" capstone item: a realistic GREEK scenario asking the learner to WRITE the whole email themselves, with "instructions" listing the key points to include. This is the climax of the lesson — the learner's email is assessed by AI feedback, so it has no answer/options.
+- Keep the same 12-18 item sizing and NO-REPETITION rules. Besides that single closing email_compose, use only teaching / vocabulary / fill_gap.
 
 CRITICAL RULES
 - GRAMMAR items: explanations.el.note MUST contain a clear Greek explanation of the grammar rule the item practises — what the rule is, and how/when it is used — in simple words for a Greek beginner. This is mandatory for every grammar item.
