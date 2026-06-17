@@ -59,6 +59,11 @@ class Lesson(Base):
     # keep using untouched. Email-track lessons leave these NULL (separate path).
     cefr_level = Column(String)  # A2 | B1 | B2 | C1 | C2
     skill_area = Column(String)  # vocabulary | grammar | listening | speaking
+    # Position of the lesson within its (cefr_level, skill_area) section. Lower =
+    # earlier/more fundamental. Drives the skill-tree sequence and the strict
+    # unlock (next lesson opens only after the previous is passed). Nullable until
+    # set by the generator/admin or backfilled; email-track lessons leave it NULL.
+    order_index = Column(Integer)
 
     items = relationship(
         "Item",
@@ -128,6 +133,11 @@ class UserLessonCompletion(Base):
     completed_at = Column(DateTime(timezone=True), server_default=func.now())
     times_completed = Column(Integer, nullable=False, default=1)
     xp_earned = Column(Integer, nullable=False, default=0)  # cumulative from this lesson
+    # Best lesson score (0-100), used by the skill-tree unlock: a lesson counts
+    # as "passed" (unlocks the next) when best_score >= 75 OR is NULL. NULL means
+    # the score was never measured — legacy completions and lessons with no
+    # auto-graded items — and is grandfathered as passed.
+    best_score = Column(Integer)
 
 
 class UserItemStat(Base):

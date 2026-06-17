@@ -8,8 +8,9 @@ Adds three columns with safe defaults, without touching existing data:
 
 Also adds the placement-test columns to `user_progress` (cefr_level,
 maritime_level), both nullable — NULL means "placement not taken yet", and the
-new lesson-architecture columns to `lessons` (cefr_level A2-C2, skill_area),
-backfilled once from each lesson's own items.
+new lesson-architecture columns to `lessons` (cefr_level A2-C2, skill_area,
+order_index), backfilled once from each lesson's own items, plus
+`user_lesson_completions.best_score` for the skill-tree unlock.
 
 `create_all` (used on startup) does NOT add columns to an existing table, so we
 run explicit ALTERs here. Safe to run repeatedly: columns are only added when
@@ -144,6 +145,48 @@ def _backfill_lesson_dimensions(conn, do_cefr, do_skill):
     )
 
 
+def _mean_difficulty(rows):
+    """Mean item-difficulty index (A1=0 … C1=4); a high default sinks item-less lessons last."""
+    indices = [_ITEM_BANDS.index(d) for d, in rows if d in _ITEM_BANDS]
+    return sum(indices) / len(indices) if indices else len(_ITEM_BANDS)
+
+
+def _backfill_order_index(conn):
+    """Sequence lessons within each (cefr_level, skill_area) section by difficulty.
+
+    Easier/more fundamental first (lower mean item difficulty), ties broken by
+    creation order (id) for stability. Email lessons and rows that already have
+    an order_index are left untouched, so later manual ordering survives re-runs.
+    """
+    lessons = conn.execute(
+        text(
+            "SELECT lesson_id, cefr_level, skill_area, id FROM lessons "
+            "WHERE track != 'email' AND order_index IS NULL"
+        )
+    ).fetchall()
+
+    groups = {}
+    for lesson_id, cefr, skill, row_id in lessons:
+        rows = conn.execute(
+            text("SELECT difficulty FROM items WHERE lesson_id = :lid"),
+            {"lid": lesson_id},
+        ).fetchall()
+        groups.setdefault((cefr, skill), []).append(
+            (_mean_difficulty(rows), row_id, lesson_id)
+        )
+
+    updated = 0
+    for members in groups.values():
+        members.sort()  # (mean difficulty, id) — easiest first, stable by creation
+        for position, (_diff, _row_id, lesson_id) in enumerate(members):
+            conn.execute(
+                text("UPDATE lessons SET order_index = :pos WHERE lesson_id = :lid"),
+                {"pos": position, "lid": lesson_id},
+            )
+            updated += 1
+    logger.info("Backfilled lessons.order_index for %d lesson(s).", updated)
+
+
 # A fixed key for the Postgres advisory lock that serialises concurrent runs
 # (e.g. several gunicorn workers applying the migration on startup at once).
 _ADVISORY_LOCK_KEY = 91237001
@@ -248,6 +291,16 @@ def run():
         if added_cefr or added_skill:
             _backfill_lesson_dimensions(conn, do_cefr=added_cefr, do_skill=added_skill)
 
+        # Skill-tree ordering: position within the (cefr_level, skill_area)
+        # section. Backfilled once from item difficulty (see _backfill_order_index),
+        # after cefr_level/skill_area exist (added just above on a fresh DB).
+        if "order_index" not in lesson_columns:
+            conn.execute(text("ALTER TABLE lessons ADD COLUMN order_index INTEGER"))
+            logger.info("Added lessons.order_index.")
+            _backfill_order_index(conn)
+        else:
+            logger.info("lessons.order_index already exists — skipping.")
+
         # User progress: placement results (NULL until the user takes the
         # placement test). The table may not exist yet on a fresh database, in
         # which case create_all builds it with the new columns already present.
@@ -263,6 +316,25 @@ def run():
                     logger.info("user_progress.%s already exists — skipping.", column)
         else:
             logger.info("user_progress table not present yet — skipping (create_all adds it).")
+
+        # Lesson completions: best_score (0-100) drives the skill-tree unlock.
+        # NULL = score never measured (legacy completions / lessons without
+        # auto-graded items) and is grandfathered as "passed".
+        if insp.has_table("user_lesson_completions"):
+            completion_columns = {
+                c["name"] for c in insp.get_columns("user_lesson_completions")
+            }
+            if "best_score" not in completion_columns:
+                conn.execute(
+                    text("ALTER TABLE user_lesson_completions ADD COLUMN best_score INTEGER")
+                )
+                logger.info("Added user_lesson_completions.best_score.")
+            else:
+                logger.info("user_lesson_completions.best_score already exists — skipping.")
+        else:
+            logger.info(
+                "user_lesson_completions table not present yet — skipping (create_all adds it)."
+            )
 
         # Allow draft items with no lesson: relax items.lesson_id NOT NULL.
         if lesson_id_not_null:

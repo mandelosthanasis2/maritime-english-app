@@ -1985,6 +1985,26 @@ h3 {
   color: var(--ink-soft);
 }
 
+/* Lesson score (skill-tree pass mark) shown on the completion screen. */
+.reward__score {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 1.05rem;
+  border-radius: var(--r-pill);
+  padding: 0.3rem 0.9rem;
+}
+.reward__score--pass {
+  color: var(--bg, #071622);
+  background: var(--teal);
+}
+.reward__score--fail {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 16%, transparent);
+}
+.reward__note--retry {
+  color: var(--amber);
+}
+
 /* ============================================================
    Admin (content management)
    ============================================================ */
@@ -3638,6 +3658,100 @@ textarea {
 /* Tighter spacing for skill sections nested inside a level. */
 .home-level .home-section {
   margin-top: var(--sp-3, 0.75rem);
+}
+
+/* ---- Skill-tree path: a numbered vertical sequence with locks ---- */
+.lesson-path {
+  list-style: none;
+  margin: var(--sp-2, 0.5rem) 0 0;
+  padding: 0;
+}
+
+.lesson-path__node {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: var(--sp-3);
+  align-items: start;
+  padding-bottom: var(--sp-3);
+}
+
+/* Connector line linking each marker to the next (hidden after the last). */
+.lesson-path__node::before {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 38px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--border);
+}
+.lesson-path__node:last-child::before {
+  display: none;
+}
+/* The line up to a passed lesson reads as "completed". */
+.lesson-path__node--done::before {
+  background: color-mix(in srgb, var(--teal) 55%, var(--border));
+}
+
+.lesson-path__marker {
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 0.95rem;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+}
+.lesson-path__marker--done {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: var(--bg, #071622);
+}
+.lesson-path__marker--current {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-2) 18%, transparent);
+}
+.lesson-path__marker--locked {
+  color: var(--ink-faint);
+}
+
+/* Card inside a path cell: no outer margin, sits in the grid column. */
+.lesson-card--path {
+  margin: 0;
+}
+
+/* Current (next available) lesson — highlighted to draw the eye. */
+.lesson-card--current {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 1px var(--accent-2), var(--sh-md, 0 6px 18px rgba(0, 0, 0, 0.35));
+}
+
+/* Locked lesson — dimmed, not interactive, no hover lift, no chevron. */
+.lesson-card--locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.lesson-card--locked::after {
+  display: none;
+}
+@media (hover: hover) {
+  .lesson-card--locked:hover {
+    transform: none;
+    box-shadow: var(--sh-sm);
+    border-color: var(--border);
+  }
+}
+.lesson-card__lock-note {
+  color: var(--ink-faint);
+  font-weight: 600;
 }
 
 /* ============================================================

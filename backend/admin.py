@@ -102,6 +102,9 @@ Each lesson trains ONE primary skill: "vocabulary" | "grammar" | "listening" | "
 - "speaking": the lesson is built around producing speech — pronunciation, saying phrases aloud, roleplay dialogues dominate.
 Pick the skill the lesson MOSTLY trains, even though a lesson mixes item types. (Do NOT set skill_area for "email" lessons — omit it.)
 
+DECIDING THE ORDER (order_index)
+Lessons in the same section (same cefr_level + skill_area) are studied IN SEQUENCE, and the next is locked until the previous is passed. Give each lesson an integer "order_index" (0, 1, 2, …) reflecting where it belongs in that sequence: the most fundamental / prerequisite / easiest lesson gets the LOWEST number, more advanced ones higher. When you produce several lessons for the same section, number them 0,1,2,… in teaching order. (Omit for email lessons.)
+
 OUTPUT: a JSON array of LESSON objects:
 {
   "lesson_title_en": "<English lesson title>",
@@ -110,7 +113,8 @@ OUTPUT: a JSON array of LESSON objects:
   "track": "maritime" | "grammar" | "email",
   "role_category": "engineer" | "deck" | "common",
   "cefr_level": "A2" | "B1" | "B2" | "C1" | "C2",
-  "skill_area": "vocabulary" | "grammar" | "listening" | "speaking"   // omit for email lessons
+  "skill_area": "vocabulary" | "grammar" | "listening" | "speaking",  // omit for email lessons
+  "order_index": <integer, 0 = first/most fundamental in its section>,  // omit for email lessons
   "items": [ <item objects, see schema below> ]
 }
 
@@ -407,6 +411,14 @@ def _resolve_skill_area(value, track, items):
     return best if votes[best] else "vocabulary"
 
 
+def _resolve_order_index(value):
+    """Coerce the model's order_index to a non-negative int; None when absent/invalid."""
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return None
+
+
 def _chunk_user_prompt(chunk, kind, known_titles):
     if kind == "grammar":
         kind_line = 'The content kind is "grammar" (general English): set track="grammar".'
@@ -484,7 +496,7 @@ def generate_lessons(source_text, kind, existing_lessons=None):
 
     Returns a list of dicts:
       {title_en, title_el, description_el, track, role_category, cefr_level,
-       skill_area, existing_lesson_id|None, items:[...]}
+       skill_area, order_index, existing_lesson_id|None, items:[...]}
     """
     kind = (kind or "auto").strip().lower()
     if kind not in ALLOWED_KINDS:
@@ -545,10 +557,11 @@ def generate_lessons(source_text, kind, existing_lessons=None):
                     "title_el": lesson.get("lesson_title_el"),
                     "description_el": lesson.get("lesson_description_el"),
                     "track": match.get("track") or track,
-                    # Existing lessons keep their curated category/level/skill untouched.
+                    # Existing lessons keep their curated category/level/skill/order untouched.
                     "role_category": None,
                     "cefr_level": None,
                     "skill_area": None,
+                    "order_index": None,
                     "existing_lesson_id": match["lesson_id"],
                     "items": list(items),
                 }
@@ -565,6 +578,7 @@ def generate_lessons(source_text, kind, existing_lessons=None):
                     "skill_area": _resolve_skill_area(
                         lesson.get("skill_area"), track, items
                     ),
+                    "order_index": _resolve_order_index(lesson.get("order_index")),
                     "existing_lesson_id": None,
                     "items": list(items),
                 }

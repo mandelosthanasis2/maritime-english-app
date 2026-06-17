@@ -214,6 +214,9 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
   const [roleCategory, setRoleCategory] = useState(group.role_category || 'common')
   const [cefrLevel, setCefrLevel] = useState(group.cefr_level || 'B1')
   const [skillArea, setSkillArea] = useState(group.skill_area || 'vocabulary')
+  const [orderIndex, setOrderIndex] = useState(
+    group.order_index == null ? '' : String(group.order_index),
+  )
   const [source, setSource] = useState(group.source || '')
   const [busy, setBusy] = useState(null)
   const [note, setNote] = useState(null) // inline error shown ON this card
@@ -227,21 +230,29 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
       track,
       role_category: roleCategory,
     }
-    // Level/skill organise the maritime path only — email lessons leave them out.
+    // Level/skill/order organise the maritime path only — email lessons leave them out.
     if (track !== 'email') {
       payload.cefr_level = cefrLevel
       payload.skill_area = skillArea
+      payload.order_index = orderIndex === '' ? null : Number(orderIndex)
     }
     return payload
   }
 
   // Existing lessons: save a single field immediately (the header isn't editable).
   async function changeExistingField(field, value, setter) {
-    const previous = field === 'role_category' ? roleCategory : field === 'cefr_level' ? cefrLevel : skillArea
+    const prevByField = {
+      role_category: roleCategory,
+      cefr_level: cefrLevel,
+      skill_area: skillArea,
+      order_index: orderIndex,
+    }
+    const previous = prevByField[field]
     setter(value)
     setNote(null)
+    const sent = field === 'order_index' ? (value === '' ? null : Number(value)) : value
     try {
-      await adminEditLesson(group.lesson_id, { [field]: value })
+      await adminEditLesson(group.lesson_id, { [field]: sent })
     } catch (err) {
       setter(previous)
       setNote(`Η αλλαγή απέτυχε: ${err.message}`)
@@ -337,6 +348,20 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
                   {SKILL_AREAS.map((s) => <option key={s} value={s}>{SKILL_AREA_LABEL[s]}</option>)}
                 </select>
               </label>
+              <label className="admin-field admin-field--inline">
+                <span className="admin-field__label">Σειρά</span>
+                <input
+                  className="admin-input"
+                  type="number"
+                  min="0"
+                  value={orderIndex}
+                  onChange={(e) => setOrderIndex(e.target.value)}
+                  onBlur={(e) => {
+                    if (String(group.order_index ?? '') !== e.target.value)
+                      changeExistingField('order_index', e.target.value, setOrderIndex)
+                  }}
+                />
+              </label>
             </div>
           )}
         </>
@@ -401,6 +426,17 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
                 >
                   {SKILL_AREAS.map((s) => <option key={s} value={s}>{SKILL_AREA_LABEL[s]}</option>)}
                 </select>
+              </label>
+              <label className="admin-field admin-field--inline">
+                <span className="admin-field__label">Σειρά στην ενότητα</span>
+                <input
+                  className="admin-input"
+                  type="number"
+                  min="0"
+                  value={orderIndex}
+                  onChange={(e) => setOrderIndex(e.target.value)}
+                  placeholder="0 = πρώτο"
+                />
               </label>
             </>
           )}
@@ -570,8 +606,9 @@ function ExistingLessonsPanel({ lessons, reload }) {
   async function changeField(lessonId, field, value) {
     setOverrides((o) => ({ ...o, [`${lessonId}:${field}`]: value }))
     setNotes((n) => ({ ...n, [lessonId]: null }))
+    const sent = field === 'order_index' ? (value === '' ? null : Number(value)) : value
     try {
-      await adminEditLesson(lessonId, { [field]: value })
+      await adminEditLesson(lessonId, { [field]: sent })
       setNotes((n) => ({ ...n, [lessonId]: '✓ Ενημερώθηκε.' }))
       reload()
     } catch (err) {
@@ -675,6 +712,19 @@ function ExistingLessonsPanel({ lessons, reload }) {
                 >
                   {SKILL_AREAS.map((s) => <option key={s} value={s}>{SKILL_AREA_LABEL[s]}</option>)}
                 </select>
+                <input
+                  className="admin-input admin-input--compact"
+                  type="number"
+                  min="0"
+                  style={{ width: '4.5rem' }}
+                  defaultValue={lesson.order_index ?? ''}
+                  placeholder="σειρά"
+                  aria-label="Σειρά"
+                  onBlur={(e) => {
+                    if (String(lesson.order_index ?? '') !== e.target.value)
+                      changeField(lesson.lesson_id, 'order_index', e.target.value)
+                  }}
+                />
               </>
             )}
             <input
