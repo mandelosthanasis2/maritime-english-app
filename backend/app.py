@@ -1163,6 +1163,44 @@ def next_lesson():
 # Source `type` <-> editorial `skill_type` for stored items.
 _SKILL_TYPE_FROM_TYPE = {"dialogue": "roleplay", "translation": "speaking"}
 
+# Maritime-track only: which item kinds (skill_type) belong in each skill_area.
+# `teaching` is allowed everywhere — it's the intro/explanation. The email track
+# has its own structure and is exempt; lessons without a known skill_area are
+# left alone (nothing to validate against).
+SKILL_AREA_ITEM_TYPES = {
+    "vocabulary": {"teaching", "vocabulary", "fill_gap"},
+    "grammar": {"teaching", "fill_gap", "word_order"},
+    "listening": {"teaching", "listening", "fill_gap"},
+    "speaking": {"teaching", "speaking", "roleplay"},
+}
+
+
+def item_skill_kind(item):
+    """The item's editorial kind, normalized (dialogue->roleplay, etc.)."""
+    if item.skill_type:
+        return item.skill_type.lower()
+    return (_SKILL_TYPE_FROM_TYPE.get(item.type, item.type) or "").lower()
+
+
+def lesson_skill_mismatches(lesson, items):
+    """Items whose kind doesn't fit the lesson's skill_area.
+
+    Maritime track only: email lessons (own structure) and lessons without a
+    recognised skill_area are exempt and return []. Returns a list of
+    (item, kind) tuples for the offending items.
+    """
+    if lesson.track != "maritime":
+        return []
+    allowed = SKILL_AREA_ITEM_TYPES.get(lesson.skill_area)
+    if not allowed:
+        return []
+    bad = []
+    for item in items:
+        kind = item_skill_kind(item)
+        if kind and kind not in allowed:
+            bad.append((item, kind))
+    return bad
+
 
 def serialize_admin_item(item):
     data = item.data or {}
@@ -1182,6 +1220,14 @@ def serialize_admin_item(item):
 
 
 def serialize_admin_lesson(lesson, items):
+    # Flag items that don't belong in this lesson's skill_area (maritime only),
+    # so the admin UI can warn before approval and mark existing offenders.
+    bad_ids = {item.item_id for item, _kind in lesson_skill_mismatches(lesson, items)}
+    serialized_items = []
+    for i in items:
+        entry = serialize_admin_item(i)
+        entry["skill_mismatch"] = i.item_id in bad_ids
+        serialized_items.append(entry)
     return {
         "lesson_id": lesson.lesson_id,
         "title": lesson.title,
@@ -1196,7 +1242,9 @@ def serialize_admin_lesson(lesson, items):
         "status": lesson.status,
         # True when items are being attached to an already-approved lesson.
         "existing": lesson.status == "approved",
-        "items": [serialize_admin_item(i) for i in items],
+        # Count of items whose type doesn't fit skill_area (0 = clean).
+        "skill_mismatch_count": len(bad_ids),
+        "items": serialized_items,
     }
 
 
@@ -1682,6 +1730,41 @@ def admin_draft_lessons():
         session.close()
 
 
+@app.route("/api/admin/skill-mismatches", methods=["GET"])
+def admin_skill_mismatches():
+    """Per-lesson item-type mismatches across ALL maritime lessons.
+
+    Returns {lesson_id: [{item_id, type, skill_type, kind}, ...]} for every
+    maritime lesson (draft or approved) that contains an item not allowed in its
+    skill_area. Drives the read-only warning indicator in the admin — existing
+    offenders are surfaced, never modified. Clean lessons are omitted.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        lessons = session.query(Lesson).filter(Lesson.track == "maritime").all()
+        result = {}
+        for lesson in lessons:
+            bad = lesson_skill_mismatches(lesson, lesson.items)
+            if bad:
+                result[lesson.lesson_id] = [
+                    {
+                        "item_id": item.item_id,
+                        "type": item.type,
+                        "skill_type": item.skill_type,
+                        "kind": kind,
+                    }
+                    for item, kind in bad
+                ]
+        return jsonify(result)
+    finally:
+        session.close()
+
+
 @app.route("/api/admin/auto-categorize", methods=["POST"])
 def admin_auto_categorize():
     """Classify unclassified approved lessons into engineer/deck/common.
@@ -1993,12 +2076,53 @@ def admin_approve_lesson(lesson_id):
     except AuthError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
+    payload = request.get_json(silent=True) or {}
+    force = bool(payload.get("force"))  # admin chose to publish despite warnings
+
     session = SessionLocal()
     try:
         lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
         if lesson is None:
             logger.warning("Approve failed: lesson %s not found", lesson_id)
             return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
+
+        # Validate item types against the lesson's skill_area (maritime only).
+        # Fail-closed: refuse to publish a mismatch unless the admin overrides
+        # with force=true, and spell out exactly which item is wrong and why.
+        all_items = (
+            session.query(Item).filter_by(lesson_id=lesson_id).order_by(Item.order_index).all()
+        )
+        mismatches = lesson_skill_mismatches(lesson, all_items)
+        if mismatches and not force:
+            allowed = sorted(SKILL_AREA_ITEM_TYPES.get(lesson.skill_area, set()))
+            logger.warning(
+                "Approve blocked: lesson %s has %d item(s) outside skill_area %r",
+                lesson_id,
+                len(mismatches),
+                lesson.skill_area,
+            )
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            f"{len(mismatches)} άσκηση(εις) δεν ταιριάζει στη δεξιότητα "
+                            f"'{lesson.skill_area}'. Επιτρεπτοί τύποι: {', '.join(allowed)}."
+                        ),
+                        "skill_area": lesson.skill_area,
+                        "allowed_types": allowed,
+                        "mismatches": [
+                            {
+                                "item_id": item.item_id,
+                                "type": item.type,
+                                "skill_type": item.skill_type,
+                                "kind": kind,
+                            }
+                            for item, kind in mismatches
+                        ],
+                    }
+                ),
+                422,
+            )
 
         lesson.status = "approved"  # publish the lesson
         items = session.query(Item).filter_by(lesson_id=lesson_id, status="draft").all()
