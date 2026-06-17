@@ -77,11 +77,18 @@ export async function fetchMyProgress() {
   return res.json()
 }
 
-export async function completeLesson(lessonId) {
+// score: 0-100 lesson score for the skill-tree unlock, or null/undefined when
+// not measured (a lesson with no auto-graded items).
+export async function completeLesson(lessonId, score) {
   const headers = await authHeaders()
+  headers['Content-Type'] = 'application/json'
   const res = await fetch(
     `${API_BASE_URL}/api/lessons/${encodeURIComponent(lessonId)}/complete`,
-    { method: 'POST', headers },
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ score: score ?? null }),
+    },
   )
   if (!res.ok) {
     let message = `Request failed (${res.status})`

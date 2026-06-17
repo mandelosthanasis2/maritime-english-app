@@ -67,6 +67,11 @@ XP_REVIEW = 10
 XP_PRACTICE_CORRECT = 5
 XP_PRACTICE_WRONG = 1
 
+# Skill-tree unlock: a lesson must be completed with at least this score (0-100)
+# to count as "passed" and open the next lesson in its section. A NULL score
+# (legacy completions, or lessons with no auto-graded items) is grandfathered.
+LESSON_PASS_SCORE = 75
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -114,6 +119,9 @@ def serialize_lesson_meta(lesson, item_count, writing_practice=False):
         # listening|speaking.
         "cefr_level": lesson.cefr_level,
         "skill_area": lesson.skill_area,
+        # Position within its (cefr_level, skill_area) section; drives the
+        # skill-tree sequence/unlock on the home. Null for legacy/email lessons.
+        "order_index": lesson.order_index,
         "module": lesson.module,
         "title": lesson.title,
         "description": lesson.description,
@@ -191,11 +199,15 @@ def touch_streak(progress, today):
 
 def serialize_progress(session, progress):
     rows = (
-        session.query(UserLessonCompletion.lesson_id)
+        session.query(UserLessonCompletion.lesson_id, UserLessonCompletion.best_score)
         .filter_by(user_id=progress.user_id)
         .all()
     )
     completed_ids = [r[0] for r in rows]
+    # A lesson is "passed" (unlocks the next in its skill-tree section) when its
+    # best score is >= the pass mark, or NULL (legacy / un-scored completions are
+    # grandfathered). The home uses this set for the strict unlock + the ✓ state.
+    passed_ids = [lid for lid, score in rows if score is None or score >= LESSON_PASS_SCORE]
     return {
         "total_xp": progress.total_xp,
         "current_streak": progress.current_streak,
@@ -203,6 +215,7 @@ def serialize_progress(session, progress):
         if progress.last_active_date
         else None,
         "completed_lesson_ids": completed_ids,
+        "passed_lesson_ids": passed_ids,
         "lessons_completed": len(completed_ids),
         # Placement results; null until the user takes the placement test.
         "cefr_level": progress.cefr_level,
@@ -436,6 +449,14 @@ def complete_lesson(lesson_id):
     except AuthError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
+    # Optional lesson score (0-100) for the skill-tree unlock. NULL/absent means
+    # "not measured" (e.g. a lesson with no auto-graded items) — grandfathered.
+    payload = request.get_json(silent=True) or {}
+    raw_score = payload.get("score")
+    score = None
+    if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
+        score = max(0, min(100, int(round(raw_score))))
+
     session = SessionLocal()
     try:
         lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
@@ -462,12 +483,17 @@ def complete_lesson(lesson_id):
                 times_completed=1,
                 xp_earned=xp_earned,
                 completed_at=now,
+                best_score=score,
             )
             session.add(completion)
         else:
             completion.times_completed += 1
             completion.xp_earned += xp_earned
             completion.completed_at = now
+            # Keep the best score ever achieved; never downgrade. A legacy NULL
+            # (already passed) stays NULL so a low replay can't relock the next.
+            if completion.best_score is not None and score is not None:
+                completion.best_score = max(completion.best_score, score)
 
         # Streak: based on the day of the most recent activity.
         touch_streak(progress, today)
@@ -476,10 +502,12 @@ def complete_lesson(lesson_id):
 
         session.commit()
 
-        payload = serialize_progress(session, progress)
-        payload["xp_earned"] = xp_earned
-        payload["already_completed"] = already_completed
-        return jsonify(payload)
+        out = serialize_progress(session, progress)
+        out["xp_earned"] = xp_earned
+        out["already_completed"] = already_completed
+        out["best_score"] = completion.best_score
+        out["passed"] = completion.best_score is None or completion.best_score >= LESSON_PASS_SCORE
+        return jsonify(out)
     except Exception:  # pragma: no cover - unexpected failure
         session.rollback()
         logger.exception("Completing lesson failed")
@@ -840,6 +868,7 @@ def serialize_admin_lesson(lesson, items):
         "role_category": lesson.role_category or "common",
         "cefr_level": lesson.cefr_level,
         "skill_area": lesson.skill_area,
+        "order_index": lesson.order_index,
         "status": lesson.status,
         # True when items are being attached to an already-approved lesson.
         "existing": lesson.status == "approved",
@@ -990,6 +1019,7 @@ def admin_generate_items():
                     role_category=entry.get("role_category") or "common",
                     cefr_level=entry.get("cefr_level"),
                     skill_area=entry.get("skill_area"),
+                    order_index=entry.get("order_index"),
                     module=None,
                     title=entry["title_en"],
                     title_el=entry.get("title_el"),
@@ -1724,6 +1754,15 @@ def admin_edit_lesson(lesson_id):
             if value is not None and value not in ALLOWED_SKILL_AREAS:
                 return jsonify({"error": f"Invalid skill_area: '{value}'."}), 400
             lesson.skill_area = value
+        if "order_index" in payload:
+            raw = payload["order_index"]
+            if raw in (None, ""):
+                lesson.order_index = None
+            else:
+                try:
+                    lesson.order_index = max(0, int(raw))
+                except (TypeError, ValueError):
+                    return jsonify({"error": "order_index must be an integer."}), 400
 
         session.commit()
         items = session.query(Item).filter_by(lesson_id=lesson_id).order_by(Item.order_index).all()

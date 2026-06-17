@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { completeLesson, fetchLesson } from '../api.js'
 import LessonItem, { isGatedType } from '../components/LessonItem.jsx'
@@ -22,6 +22,12 @@ function Lesson() {
   const [phase, setPhase] = useState('intro') // intro | playing | done
   const [step, setStep] = useState(0)
   const [answered, setAnswered] = useState(false)
+
+  // First-attempt tally over auto-graded items (fill_gap / word_order /
+  // vocabulary choice), reported via LessonItem's onResult. The lesson score is
+  // correct/graded; a lesson with no gradable items scores null (passes on
+  // completion). Drives the skill-tree unlock (≥75% opens the next lesson).
+  const results = useRef({ correct: 0, graded: 0 })
 
   // Completion result from POST /api/lessons/:id/complete
   const [completion, setCompletion] = useState(null)
@@ -93,13 +99,22 @@ function Lesson() {
   function start() {
     setStep(0)
     setAnswered(false)
+    results.current = { correct: 0, graded: 0 }
     setPhase('playing')
   }
 
+  // One first-attempt outcome from a gradable item (reveal counts as wrong).
+  function recordResult(correct) {
+    results.current.graded += 1
+    if (correct) results.current.correct += 1
+  }
+
   function finishLesson() {
+    const { correct, graded } = results.current
+    const score = graded > 0 ? Math.round((correct / graded) * 100) : null
     setPhase('done')
     setCompletionStatus('saving')
-    completeLesson(lessonId)
+    completeLesson(lessonId, score)
       .then((res) => {
         setCompletion(res)
         setCompletionStatus('done')
@@ -178,6 +193,18 @@ function Lesson() {
 
           {completionStatus === 'done' && completion && (
             <div className="reward">
+              {typeof completion.best_score === 'number' && (
+                <div
+                  className={`reward__score${completion.passed ? ' reward__score--pass' : ' reward__score--fail'}`}
+                >
+                  {completion.passed ? '✓' : '⚠'} Σκορ: {completion.best_score}%
+                </div>
+              )}
+              {completion.passed === false && (
+                <p className="reward__note reward__note--retry">
+                  Χρειάζεσαι ≥75% για να ξεκλειδώσεις το επόμενο μάθημα — ξαναπροσπάθησε.
+                </p>
+              )}
               <div className="reward__xp">+{shownXp} XP</div>
               {completion.already_completed && (
                 <p className="reward__note">Το είχες ήδη ολοκληρώσει — XP επανάληψης</p>
@@ -223,7 +250,11 @@ function Lesson() {
       </div>
 
       <div key={step} className="player__step">
-        <LessonItem item={item} onAnswered={() => setAnswered(true)} />
+        <LessonItem
+          item={item}
+          onAnswered={() => setAnswered(true)}
+          onResult={recordResult}
+        />
       </div>
 
       <div className="player__footer">

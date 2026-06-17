@@ -362,10 +362,102 @@ function LessonSection({ group, lessons, completedSet }) {
   )
 }
 
+// Order lessons within a skill section: by order_index (lower = earlier), then
+// lesson_id as a stable tie-break so the sequence is deterministic.
+function orderLessons(lessons) {
+  return [...lessons].sort((a, b) => {
+    const ao = a.order_index ?? Number.MAX_SAFE_INTEGER
+    const bo = b.order_index ?? Number.MAX_SAFE_INTEGER
+    if (ao !== bo) return ao - bo
+    return a.lesson_id < b.lesson_id ? -1 : a.lesson_id > b.lesson_id ? 1 : 0
+  })
+}
+
+// One lesson node on a skill path. State drives the visuals AND interactivity:
+//   done    — passed (≥75% or grandfathered): ✓, opens normally.
+//   current — unlocked but not passed yet: highlighted, opens normally.
+//   locked  — previous not passed: 🔒, NOT a link (cannot be opened).
+function PathLessonCard({ lesson, state, step }) {
+  const track = TRACK_META[lesson.track] || { icon: '📘', label: lesson.track || 'Lesson' }
+  const marker = state === 'done' ? '✓' : state === 'locked' ? '🔒' : step
+  const body = (
+    <>
+      <div className="lesson-card__top">
+        {lesson.module && <span className="lesson-card__module">{lesson.module}</span>}
+        <span className="lesson-card__track">
+          {track.icon} {track.label}
+        </span>
+      </div>
+      <h3 className="lesson-card__title">{lesson.title}</h3>
+      <span className="lesson-card__count">
+        {state === 'done' && <span className="lesson-card__done-tick">✓ Ολοκληρώθηκε · </span>}
+        {state === 'locked' && (
+          <span className="lesson-card__lock-note">🔒 Ολοκλήρωσε το προηγούμενο · </span>
+        )}
+        {lesson.item_count} {lesson.item_count === 1 ? 'άσκηση' : 'ασκήσεις'}
+      </span>
+      <div className="lesson-card__progress" aria-hidden="true">
+        <div
+          className="lesson-card__progress-fill"
+          style={{ width: state === 'done' ? '100%' : '0%' }}
+        />
+      </div>
+    </>
+  )
+  const cardClass = `lesson-card lesson-card--path lesson-card--${state}`
+  return (
+    <li className={`lesson-path__node lesson-path__node--${state}`}>
+      <span className={`lesson-path__marker lesson-path__marker--${state}`} aria-hidden="true">
+        {marker}
+      </span>
+      {state === 'locked' ? (
+        <div className={cardClass} aria-disabled="true" title="Ολοκλήρωσε πρώτα το προηγούμενο μάθημα">
+          {body}
+        </div>
+      ) : (
+        <Link to={`/lessons/${lesson.lesson_id}`} className={cardClass}>
+          {body}
+        </Link>
+      )}
+    </li>
+  )
+}
+
+// One skill section as a sequential PATH with strict unlocking: the first lesson
+// is always open; each next opens only once the previous is passed (≥75%).
+function SkillPath({ meta, lessons, passedSet }) {
+  const ordered = orderLessons(lessons)
+  let prevPassed = true // the first lesson is always unlocked
+  const nodes = ordered.map((lesson, i) => {
+    const passed = passedSet.has(lesson.lesson_id)
+    const state = passed ? 'done' : prevPassed ? 'current' : 'locked'
+    prevPassed = passed
+    return { lesson, state, step: i + 1 }
+  })
+  return (
+    <section className="home-section">
+      <header className="home-section__head">
+        <span className={`home-section__icon home-section__icon--${meta.key}`} aria-hidden="true">
+          {meta.icon}
+        </span>
+        <span className="home-section__heading">
+          <h2 className="home-section__title">{meta.label}</h2>
+        </span>
+        <span className="home-section__count">{nodes.length}</span>
+      </header>
+      <ol className="lesson-path">
+        {nodes.map(({ lesson, state, step }) => (
+          <PathLessonCard key={lesson.lesson_id} lesson={lesson} state={state} step={step} />
+        ))}
+      </ol>
+    </section>
+  )
+}
+
 // One CEFR level block: a level header (marked when it's the user's placement
-// level) followed by the 4 skill sections that actually have lessons. The home
+// level) followed by the 4 skill paths that actually have lessons. The home
 // scrolls to the user's level on load via the forwarded ref.
-function LevelSection({ level, lessons, completedSet, isUserLevel, innerRef }) {
+function LevelSection({ level, lessons, passedSet, isUserLevel, innerRef }) {
   const bySkill = SKILL_AREAS.map((meta) => ({
     meta,
     lessons: lessons.filter((l) => lessonSkill(l) === meta.key),
@@ -386,12 +478,7 @@ function LevelSection({ level, lessons, completedSet, isUserLevel, innerRef }) {
         {isUserLevel && <span className="home-level__you-badge">Το επίπεδό σου</span>}
       </header>
       {bySkill.map(({ meta, lessons: skillLessons }) => (
-        <LessonSection
-          key={meta.key}
-          group={{ key: meta.key, icon: meta.icon, title: meta.label }}
-          lessons={skillLessons}
-          completedSet={completedSet}
-        />
+        <SkillPath key={meta.key} meta={meta} lessons={skillLessons} passedSet={passedSet} />
       ))}
     </section>
   )
@@ -401,7 +488,7 @@ function LevelSection({ level, lessons, completedSet, isUserLevel, innerRef }) {
 // sections. On first load it gently scrolls to the user's placement level so
 // they start where they belong — every level stays visible and browseable
 // (no locking yet; that's a later part).
-function MaritimePath({ lessons, completedSet, userLevel }) {
+function MaritimePath({ lessons, passedSet, userLevel }) {
   const youRef = useRef(null)
   const didScroll = useRef(false)
 
@@ -431,7 +518,7 @@ function MaritimePath({ lessons, completedSet, userLevel }) {
           key={level}
           level={level}
           lessons={levelLessons}
-          completedSet={completedSet}
+          passedSet={passedSet}
           isUserLevel={level === userLevel}
           innerRef={level === userLevel ? youRef : undefined}
         />
@@ -489,6 +576,8 @@ function Home() {
   }, [])
 
   const completedSet = new Set(progress?.completed_lesson_ids || [])
+  // Lessons passed (≥75% or grandfathered) — drives the skill-tree unlock/✓.
+  const passedSet = new Set(progress?.passed_lesson_ids || [])
 
   return (
     <div className="home">
@@ -558,7 +647,7 @@ function Home() {
               {currentPath === 'maritime' && (
                 <MaritimePath
                   lessons={maritimeLessons}
-                  completedSet={completedSet}
+                  passedSet={passedSet}
                   userLevel={userLessonLevel(progress?.cefr_level)}
                 />
               )}
