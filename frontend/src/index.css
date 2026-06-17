@@ -3754,6 +3754,25 @@ textarea {
   font-weight: 600;
 }
 
+/* ---- Module-test node (last step of a section path) ---- */
+.lesson-path__marker--available {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 16%, var(--surface-2));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-2) 16%, transparent);
+}
+/* The test card reads as a distinct "milestone": dashed frame + flag accent. */
+.lesson-card--test {
+  border-style: dashed;
+}
+.lesson-card--test .lesson-card__track {
+  color: var(--accent-2);
+  font-weight: 700;
+}
+.lesson-card--test.lesson-card--done {
+  border-style: solid;
+}
+
 /* ============================================================
    Lesson player polish (UI/UX step 4) — animation only
    ============================================================ */
