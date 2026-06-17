@@ -27,6 +27,16 @@ const ROLE_LABEL = {
   deck: '🧭 Κατάστρωμα',
   common: '🤝 Κοινά για όλους',
 }
+// New lesson architecture: per-lesson CEFR band (A2–C2) and skill area. Kept
+// separate from the item-level DIFFICULTIES above (A1–C1).
+const CEFR_LEVELS = ['A2', 'B1', 'B2', 'C1', 'C2']
+const SKILL_AREAS = ['vocabulary', 'grammar', 'listening', 'speaking']
+const SKILL_AREA_LABEL = {
+  vocabulary: '📖 Vocabulary',
+  grammar: '📐 Grammar',
+  listening: '👂 Listening',
+  speaking: '🎙️ Speaking',
+}
 const KINDS = [
   { value: 'auto', label: 'Αυτόματο' },
   { value: 'grammar', label: 'Γραμματική' },
@@ -202,12 +212,40 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
   const [description, setDescription] = useState(group.description || '')
   const [track, setTrack] = useState(group.track || 'maritime')
   const [roleCategory, setRoleCategory] = useState(group.role_category || 'common')
+  const [cefrLevel, setCefrLevel] = useState(group.cefr_level || 'B1')
+  const [skillArea, setSkillArea] = useState(group.skill_area || 'vocabulary')
   const [source, setSource] = useState(group.source || '')
   const [busy, setBusy] = useState(null)
   const [note, setNote] = useState(null) // inline error shown ON this card
 
   function headerPayload() {
-    return { title, title_el: titleEl, description, source, track, role_category: roleCategory }
+    const payload = {
+      title,
+      title_el: titleEl,
+      description,
+      source,
+      track,
+      role_category: roleCategory,
+    }
+    // Level/skill organise the maritime path only — email lessons leave them out.
+    if (track !== 'email') {
+      payload.cefr_level = cefrLevel
+      payload.skill_area = skillArea
+    }
+    return payload
+  }
+
+  // Existing lessons: save a single field immediately (the header isn't editable).
+  async function changeExistingField(field, value, setter) {
+    const previous = field === 'role_category' ? roleCategory : field === 'cefr_level' ? cefrLevel : skillArea
+    setter(value)
+    setNote(null)
+    try {
+      await adminEditLesson(group.lesson_id, { [field]: value })
+    } catch (err) {
+      setter(previous)
+      setNote(`Η αλλαγή απέτυχε: ${err.message}`)
+    }
   }
 
   async function saveHeader() {
@@ -220,21 +258,6 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
       onError(err.message)
     } finally {
       setBusy(null)
-    }
-  }
-
-  // Existing lessons: the header is not editable, but the role category is —
-  // saved immediately on change (only that field, so legacy tracks like
-  // "engine" never round-trip into the track validator).
-  async function changeExistingCategory(value) {
-    const previous = roleCategory
-    setRoleCategory(value)
-    setNote(null)
-    try {
-      await adminEditLesson(group.lesson_id, { role_category: value })
-    } catch (err) {
-      setRoleCategory(previous)
-      setNote(`Η αλλαγή κατηγορίας απέτυχε: ${err.message}`)
     }
   }
 
@@ -287,11 +310,35 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
             <select
               className="admin-input"
               value={roleCategory}
-              onChange={(e) => changeExistingCategory(e.target.value)}
+              onChange={(e) => changeExistingField('role_category', e.target.value, setRoleCategory)}
             >
               {ROLE_CATEGORIES.map((c) => <option key={c} value={c}>{ROLE_LABEL[c]}</option>)}
             </select>
           </label>
+          {track !== 'email' && (
+            <div className="admin-row">
+              <label className="admin-field admin-field--inline">
+                <span className="admin-field__label">Επίπεδο</span>
+                <select
+                  className="admin-input"
+                  value={cefrLevel}
+                  onChange={(e) => changeExistingField('cefr_level', e.target.value, setCefrLevel)}
+                >
+                  {CEFR_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </label>
+              <label className="admin-field admin-field--inline">
+                <span className="admin-field__label">Δεξιότητα</span>
+                <select
+                  className="admin-input"
+                  value={skillArea}
+                  onChange={(e) => changeExistingField('skill_area', e.target.value, setSkillArea)}
+                >
+                  {SKILL_AREAS.map((s) => <option key={s} value={s}>{SKILL_AREA_LABEL[s]}</option>)}
+                </select>
+              </label>
+            </div>
+          )}
         </>
       ) : (
         <div className="admin-lesson__fields">
@@ -333,6 +380,30 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
               {ROLE_CATEGORIES.map((c) => <option key={c} value={c}>{ROLE_LABEL[c]}</option>)}
             </select>
           </label>
+          {track !== 'email' && (
+            <>
+              <label className="admin-field admin-field--inline">
+                <span className="admin-field__label">Επίπεδο (CEFR)</span>
+                <select
+                  className="admin-input"
+                  value={cefrLevel}
+                  onChange={(e) => setCefrLevel(e.target.value)}
+                >
+                  {CEFR_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </label>
+              <label className="admin-field admin-field--inline">
+                <span className="admin-field__label">Δεξιότητα</span>
+                <select
+                  className="admin-input"
+                  value={skillArea}
+                  onChange={(e) => setSkillArea(e.target.value)}
+                >
+                  {SKILL_AREAS.map((s) => <option key={s} value={s}>{SKILL_AREA_LABEL[s]}</option>)}
+                </select>
+              </label>
+            </>
+          )}
         </div>
       )}
 
@@ -383,6 +454,8 @@ function ExistingLessonsPanel({ lessons, reload }) {
   const [notes, setNotes] = useState({}) // lesson_id -> status message
   // Optimistic category overrides while the autosave is in flight.
   const [categories, setCategories] = useState({})
+  // Optimistic level/skill overrides, keyed `${lessonId}:${field}`.
+  const [overrides, setOverrides] = useState({})
   const [categorizing, setCategorizing] = useState(false)
   const [summary, setSummary] = useState(null) // auto-categorize outcome line
 
@@ -492,6 +565,21 @@ function ExistingLessonsPanel({ lessons, reload }) {
     }
   }
 
+  // Level/skill edits for approved lessons (correct backfilled values). Optimistic
+  // override per (lesson, field), rolled back if the save fails.
+  async function changeField(lessonId, field, value) {
+    setOverrides((o) => ({ ...o, [`${lessonId}:${field}`]: value }))
+    setNotes((n) => ({ ...n, [lessonId]: null }))
+    try {
+      await adminEditLesson(lessonId, { [field]: value })
+      setNotes((n) => ({ ...n, [lessonId]: '✓ Ενημερώθηκε.' }))
+      reload()
+    } catch (err) {
+      setOverrides((o) => ({ ...o, [`${lessonId}:${field}`]: undefined }))
+      setNotes((n) => ({ ...n, [lessonId]: `Η αλλαγή απέτυχε: ${err.message}` }))
+    }
+  }
+
   // Save the lesson's source tag (where the content came from) on blur,
   // only when it actually changed.
   async function saveSource(lessonId, value, original) {
@@ -569,6 +657,26 @@ function ExistingLessonsPanel({ lessons, reload }) {
             >
               {ROLE_CATEGORIES.map((c) => <option key={c} value={c}>{ROLE_LABEL[c]}</option>)}
             </select>
+            {lesson.track !== 'email' && (
+              <>
+                <select
+                  className="admin-input admin-input--compact"
+                  value={overrides[`${lesson.lesson_id}:cefr_level`] ?? lesson.cefr_level ?? 'B1'}
+                  onChange={(e) => changeField(lesson.lesson_id, 'cefr_level', e.target.value)}
+                  aria-label="Επίπεδο"
+                >
+                  {CEFR_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+                <select
+                  className="admin-input admin-input--compact"
+                  value={overrides[`${lesson.lesson_id}:skill_area`] ?? lesson.skill_area ?? 'vocabulary'}
+                  onChange={(e) => changeField(lesson.lesson_id, 'skill_area', e.target.value)}
+                  aria-label="Δεξιότητα"
+                >
+                  {SKILL_AREAS.map((s) => <option key={s} value={s}>{SKILL_AREA_LABEL[s]}</option>)}
+                </select>
+              </>
+            )}
             <input
               className="admin-input admin-input--compact admin-teach-row__source"
               defaultValue={lesson.source || ''}

@@ -35,6 +35,20 @@ ALLOWED_SKILL_TYPES = {
 ALLOWED_KINDS = {"auto", "grammar", "maritime", "email"}
 ALLOWED_TRACKS = {"grammar", "maritime", "email"}
 ALLOWED_ROLE_CATEGORIES = {"engineer", "deck", "common"}
+# New lesson architecture: the CEFR band a whole lesson sits at (A2-C2) and the
+# single skill it trains. Distinct from items.difficulty (A1-C1) — see models.py.
+ALLOWED_CEFR_LEVELS = {"A2", "B1", "B2", "C1", "C2"}
+ALLOWED_SKILL_AREAS = {"vocabulary", "grammar", "listening", "speaking"}
+# Item skill_type/type -> lesson skill area, for the heuristic fallback when the
+# model omits skill_area. grammar-track lessons are forced to "grammar" instead.
+_SKILL_AREA_FROM_ITEM = {
+    "vocabulary": "vocabulary",
+    "fill_gap": "vocabulary",
+    "word_order": "vocabulary",
+    "listening": "listening",
+    "speaking": "speaking",
+    "roleplay": "speaking",
+}
 
 MAX_CHUNKS = 8
 TARGET_CHUNK_CHARS = 6000
@@ -77,6 +91,17 @@ Each lesson also gets a "role_category" — who on board it is for:
 - "deck": bridge, navigation, radar, helm/steering, mooring, cargo handling on deck.
 - "common": for everyone — safety, emergencies, general communication, SMCP basics, and ALL grammar lessons (track "grammar" is ALWAYS "common"). Email lessons (track "email") are ALWAYS "common" too.
 
+DECIDING THE LESSON LEVEL (cefr_level)
+Each lesson gets a single CEFR band describing the level of the WHOLE lesson: "A2" | "B1" | "B2" | "C1" | "C2". Judge it from the difficulty of the language the lesson teaches (vocabulary range, sentence complexity, how specialised the content is): basic everyday/entry maritime -> A2/B1; confident professional use -> B2; demanding, nuanced or highly technical -> C1/C2. This is the lesson's organizing level, separate from each item's own difficulty band.
+
+DECIDING THE SKILL AREA (skill_area)
+Each lesson trains ONE primary skill: "vocabulary" | "grammar" | "listening" | "speaking".
+- "grammar": the lesson's point is an English grammar rule/structure (ALL track "grammar" lessons are "grammar").
+- "vocabulary": the lesson's point is learning words/terms/phrases and their meaning (most maritime terminology lessons).
+- "listening": the lesson is built around understanding spoken English (listening items dominate).
+- "speaking": the lesson is built around producing speech — pronunciation, saying phrases aloud, roleplay dialogues dominate.
+Pick the skill the lesson MOSTLY trains, even though a lesson mixes item types. (Do NOT set skill_area for "email" lessons — omit it.)
+
 OUTPUT: a JSON array of LESSON objects:
 {
   "lesson_title_en": "<English lesson title>",
@@ -84,6 +109,8 @@ OUTPUT: a JSON array of LESSON objects:
   "lesson_description_el": "<one short Greek sentence describing the lesson>",
   "track": "maritime" | "grammar" | "email",
   "role_category": "engineer" | "deck" | "common",
+  "cefr_level": "A2" | "B1" | "B2" | "C1" | "C2",
+  "skill_area": "vocabulary" | "grammar" | "listening" | "speaking"   // omit for email lessons
   "items": [ <item objects, see schema below> ]
 }
 
@@ -344,6 +371,42 @@ def _resolve_role_category(value, track):
     return category if category in ALLOWED_ROLE_CATEGORIES else "common"
 
 
+def _resolve_cefr_level(value, items):
+    """Validate the model's lesson cefr_level (A2-C2); fall back to the items' mean."""
+    level = (value or "").strip().upper()
+    if level in ALLOWED_CEFR_LEVELS:
+        return level
+    bands = ("A1", "A2", "B1", "B2", "C1")
+    out = ("A2", "B1", "B2", "C1", "C2")  # lesson scale, parallel to bands (A1->A2)
+    indices = [
+        bands.index((i.get("difficulty") or i.get("level") or "").strip().upper())
+        for i in items
+        if (i.get("difficulty") or i.get("level") or "").strip().upper() in bands
+    ]
+    if not indices:
+        return "A2"
+    return out[round(sum(indices) / len(indices))]
+
+
+def _resolve_skill_area(value, track, items):
+    """Validate the model's skill_area; grammar by track, else majority item vote."""
+    if track == "email":
+        return None  # email path doesn't use skill_area
+    area = (value or "").strip().lower()
+    if area in ALLOWED_SKILL_AREAS:
+        return area
+    if track == "grammar":
+        return "grammar"
+    votes = {"vocabulary": 0, "listening": 0, "speaking": 0}
+    for item in items:
+        skill = (item.get("skill_type") or item.get("type") or "").strip().lower()
+        mapped = _SKILL_AREA_FROM_ITEM.get(skill)
+        if mapped in votes:
+            votes[mapped] += 1
+    best = max(votes, key=lambda k: votes[k])
+    return best if votes[best] else "vocabulary"
+
+
 def _chunk_user_prompt(chunk, kind, known_titles):
     if kind == "grammar":
         kind_line = 'The content kind is "grammar" (general English): set track="grammar".'
@@ -420,7 +483,8 @@ def generate_lessons(source_text, kind, existing_lessons=None):
     of creating a new draft lesson.
 
     Returns a list of dicts:
-      {title_en, title_el, description_el, track, existing_lesson_id|None, items:[...]}
+      {title_en, title_el, description_el, track, role_category, cefr_level,
+       skill_area, existing_lesson_id|None, items:[...]}
     """
     kind = (kind or "auto").strip().lower()
     if kind not in ALLOWED_KINDS:
@@ -481,8 +545,10 @@ def generate_lessons(source_text, kind, existing_lessons=None):
                     "title_el": lesson.get("lesson_title_el"),
                     "description_el": lesson.get("lesson_description_el"),
                     "track": match.get("track") or track,
-                    # Existing lessons keep their curated category untouched.
+                    # Existing lessons keep their curated category/level/skill untouched.
                     "role_category": None,
+                    "cefr_level": None,
+                    "skill_area": None,
                     "existing_lesson_id": match["lesson_id"],
                     "items": list(items),
                 }
@@ -495,6 +561,10 @@ def generate_lessons(source_text, kind, existing_lessons=None):
                     "description_el": lesson.get("lesson_description_el"),
                     "track": track,
                     "role_category": role_category,
+                    "cefr_level": _resolve_cefr_level(lesson.get("cefr_level"), items),
+                    "skill_area": _resolve_skill_area(
+                        lesson.get("skill_area"), track, items
+                    ),
                     "existing_lesson_id": None,
                     "items": list(items),
                 }

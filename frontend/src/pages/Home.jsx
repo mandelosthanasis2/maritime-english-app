@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchLessons, fetchMyProgress, fetchNextLesson } from '../api.js'
 import useCountUp from '../useCountUp.js'
@@ -38,13 +38,35 @@ const EMAIL_WRITING_GROUP = {
   title: 'Εξάσκηση γραψίματος',
 }
 
-// The lesson list is organised by who the lesson is for. Unknown/missing
-// categories fall back to "common" so nothing ever disappears from the home.
-const ROLE_GROUPS = [
-  { key: 'engineer', icon: '⚙️', kicker: 'Μηχανοστάσιο', title: 'Για Μηχανικούς' },
-  { key: 'deck', icon: '🧭', kicker: 'Γέφυρα & Κατάστρωμα', title: 'Για Αξιωματικούς Καταστρώματος' },
-  { key: 'common', icon: '🤝', kicker: 'Βασικά', title: 'Κοινά για όλους' },
+// The maritime path is organised by CEFR LEVEL (A2→C2), and within each level
+// by the 4 SKILL AREAS below. Levels/skills with no lessons are simply not
+// rendered, so the home only ever shows what exists.
+const CEFR_LEVELS = ['A2', 'B1', 'B2', 'C1', 'C2']
+const SKILL_AREAS = [
+  { key: 'vocabulary', icon: '📖', label: 'Vocabulary' },
+  { key: 'grammar', icon: '📐', label: 'Grammar' },
+  { key: 'listening', icon: '👂', label: 'Listening' },
+  { key: 'speaking', icon: '🎙️', label: 'Speaking' },
 ]
+const SKILL_KEYS = new Set(SKILL_AREAS.map((s) => s.key))
+
+// Bucket a lesson, never losing it: an unknown/missing level falls back to a
+// middle band, an unknown/missing skill to vocabulary (legacy lessons created
+// before these dimensions existed are backfilled, so this is just a safety net).
+function lessonLevel(lesson) {
+  return CEFR_LEVELS.includes(lesson.cefr_level) ? lesson.cefr_level : 'B1'
+}
+function lessonSkill(lesson) {
+  return SKILL_KEYS.has(lesson.skill_area) ? lesson.skill_area : 'vocabulary'
+}
+
+// Placement measures CEFR on the items' A1–C1 scale; the lesson levels are
+// A2–C2. Map the user's placement onto a lesson band (A1 floors to A2) so the
+// home can highlight and scroll to "their" level. Null when not placed yet.
+function userLessonLevel(cefr) {
+  if (cefr === 'A1') return 'A2'
+  return CEFR_LEVELS.includes(cefr) ? cefr : null
+}
 
 // Levels earned purely from existing XP — no backend involved. The user
 // climbs as their total XP crosses each threshold. A consistent ⚓ icon sits
@@ -68,16 +90,6 @@ function rankForXp(xp) {
     ? Math.min(1, Math.max(0, (xp - rank.min) / (next.min - rank.min)))
     : 1
   return { rank, next, fraction }
-}
-
-// Group order adapts to the user's role: their own group first, then the
-// common lessons, then the rest. Undecided/unknown keeps the default order.
-function roleGroupOrder(userRole) {
-  if (userRole !== 'engineer' && userRole !== 'deck') return ROLE_GROUPS
-  const own = ROLE_GROUPS.find((g) => g.key === userRole)
-  const common = ROLE_GROUPS.find((g) => g.key === 'common')
-  const rest = ROLE_GROUPS.filter((g) => g !== own && g !== common)
-  return [own, common, ...rest]
 }
 
 // Placeholder tracks shown as locked "coming soon" cards so the app feels like
@@ -332,7 +344,7 @@ function LessonSection({ group, lessons, completedSet }) {
           {group.icon}
         </span>
         <span className="home-section__heading">
-          <span className="home-section__kicker">{group.kicker}</span>
+          {group.kicker && <span className="home-section__kicker">{group.kicker}</span>}
           <h2 className="home-section__title">{group.title}</h2>
         </span>
         <span className="home-section__count">{lessons.length}</span>
@@ -347,6 +359,84 @@ function LessonSection({ group, lessons, completedSet }) {
         ))}
       </div>
     </section>
+  )
+}
+
+// One CEFR level block: a level header (marked when it's the user's placement
+// level) followed by the 4 skill sections that actually have lessons. The home
+// scrolls to the user's level on load via the forwarded ref.
+function LevelSection({ level, lessons, completedSet, isUserLevel, innerRef }) {
+  const bySkill = SKILL_AREAS.map((meta) => ({
+    meta,
+    lessons: lessons.filter((l) => lessonSkill(l) === meta.key),
+  })).filter((group) => group.lessons.length > 0)
+  if (bySkill.length === 0) return null
+
+  return (
+    <section
+      ref={innerRef}
+      className={`home-level${isUserLevel ? ' home-level--you' : ''}`}
+    >
+      <header className="home-level__head">
+        <span className="home-level__badge" aria-hidden="true">{level}</span>
+        <span className="home-level__heading">
+          <span className="home-level__kicker">Επίπεδο</span>
+          <h2 className="home-level__title">{level}</h2>
+        </span>
+        {isUserLevel && <span className="home-level__you-badge">Το επίπεδό σου</span>}
+      </header>
+      {bySkill.map(({ meta, lessons: skillLessons }) => (
+        <LessonSection
+          key={meta.key}
+          group={{ key: meta.key, icon: meta.icon, title: meta.label }}
+          lessons={skillLessons}
+          completedSet={completedSet}
+        />
+      ))}
+    </section>
+  )
+}
+
+// The "Ναυτικά Αγγλικά" path: levels A2→C2 (ascending), each with its skill
+// sections. On first load it gently scrolls to the user's placement level so
+// they start where they belong — every level stays visible and browseable
+// (no locking yet; that's a later part).
+function MaritimePath({ lessons, completedSet, userLevel }) {
+  const youRef = useRef(null)
+  const didScroll = useRef(false)
+
+  const levels = CEFR_LEVELS.map((level) => ({
+    level,
+    lessons: lessons.filter((l) => lessonLevel(l) === level),
+  })).filter((group) => group.lessons.length > 0)
+
+  // Scroll to the user's level once, after it (and the lessons) have rendered.
+  const hasUserLevel = levels.some((g) => g.level === userLevel)
+  useEffect(() => {
+    if (didScroll.current || !hasUserLevel || !youRef.current) return
+    didScroll.current = true
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    youRef.current.scrollIntoView({
+      behavior: reduce ? 'auto' : 'smooth',
+      block: 'start',
+    })
+  }, [hasUserLevel])
+
+  if (levels.length === 0) return null
+
+  return (
+    <>
+      {levels.map(({ level, lessons: levelLessons }) => (
+        <LevelSection
+          key={level}
+          level={level}
+          lessons={levelLessons}
+          completedSet={completedSet}
+          isUserLevel={level === userLevel}
+          innerRef={level === userLevel ? youRef : undefined}
+        />
+      ))}
+    </>
   )
 }
 
@@ -465,22 +555,13 @@ function Home() {
                 </div>
               )}
 
-              {currentPath === 'maritime' &&
-                roleGroupOrder(progress?.user_role).map((group) => (
-                  <LessonSection
-                    key={group.key}
-                    group={group}
-                    lessons={maritimeLessons.filter((lesson) => {
-                      const category =
-                        lesson.role_category === 'engineer' ||
-                        lesson.role_category === 'deck'
-                          ? lesson.role_category
-                          : 'common'
-                      return category === group.key
-                    })}
-                    completedSet={completedSet}
-                  />
-                ))}
+              {currentPath === 'maritime' && (
+                <MaritimePath
+                  lessons={maritimeLessons}
+                  completedSet={completedSet}
+                  userLevel={userLessonLevel(progress?.cefr_level)}
+                />
+              )}
 
               {currentPath === 'email' &&
                 (() => {
