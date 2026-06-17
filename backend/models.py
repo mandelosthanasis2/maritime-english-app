@@ -49,6 +49,16 @@ class Lesson(Base):
     # "common" = for everyone (safety, grammar, basic communication, SMCP);
     # grammar-track lessons are always common.
     role_category = Column(String, nullable=False, server_default="common")
+    # New lesson architecture (organizing dimensions, distinct from items.difficulty):
+    #   cefr_level  the lesson's CEFR band: A2 | B1 | B2 | C1 | C2. The home groups
+    #               the maritime path BY this level. Nullable until set by the
+    #               generator/admin or backfilled from the lesson's own items.
+    #   skill_area  the lesson's single skill: vocabulary | grammar | listening |
+    #               speaking. The home shows these 4 skill sections within a level.
+    # Both are independent of items.difficulty (A1-C1), which placement/adaptive
+    # keep using untouched. Email-track lessons leave these NULL (separate path).
+    cefr_level = Column(String)  # A2 | B1 | B2 | C1 | C2
+    skill_area = Column(String)  # vocabulary | grammar | listening | speaking
 
     items = relationship(
         "Item",

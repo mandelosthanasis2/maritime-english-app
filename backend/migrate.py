@@ -7,7 +7,9 @@ Adds three columns with safe defaults, without touching existing data:
   - skill_type  (vocabulary | listening | fill_gap | word_order | speaking | roleplay)
 
 Also adds the placement-test columns to `user_progress` (cefr_level,
-maritime_level), both nullable — NULL means "placement not taken yet".
+maritime_level), both nullable — NULL means "placement not taken yet", and the
+new lesson-architecture columns to `lessons` (cefr_level A2-C2, skill_area),
+backfilled once from each lesson's own items.
 
 `create_all` (used on startup) does NOT add columns to an existing table, so we
 run explicit ALTERs here. Safe to run repeatedly: columns are only added when
@@ -54,6 +56,92 @@ DIFFICULTY_BACKFILL_SQL = """
 
 def _columns(insp, table):
     return {col["name"] for col in insp.get_columns(table)}
+
+
+# --- Lesson CEFR / skill_area backfill ----------------------------------------
+#
+# Derives each lesson's organizing dimensions from its own items, once, when the
+# columns are first added. Kept in Python (not raw SQL) because the skill_area
+# heuristic is a per-lesson majority vote that is awkward to express portably.
+
+# Item CEFR bands on the difficulty scale (A1-C1); lesson levels are A2-C2.
+_ITEM_BANDS = ("A1", "A2", "B1", "B2", "C1")
+# Lesson CEFR bands. C2 is never produced by the backfill (items max out at C1);
+# it exists for content the generator/admin levels up explicitly.
+_LESSON_BANDS = ("A2", "B1", "B2", "C1", "C2")
+
+# How a single item's skill_type/type maps to one of the 4 lesson skill areas.
+# fill_gap / word_order are production drills counted as vocabulary for the
+# (non-grammar) maritime path; grammar-track lessons are forced to "grammar"
+# wholesale below, so this mapping only decides among the maritime skills.
+_SKILL_AREA_FROM_ITEM = {
+    "vocabulary": "vocabulary",
+    "fill_gap": "vocabulary",
+    "word_order": "vocabulary",
+    "listening": "listening",
+    "speaking": "speaking",
+    "roleplay": "speaking",
+}
+
+
+def _cefr_from_items(rows):
+    """Lesson CEFR (A2-C2) = rounded mean of its items' difficulty, A1 lifted to A2."""
+    indices = [_ITEM_BANDS.index(d) for d, _s, _t in rows if d in _ITEM_BANDS]
+    if not indices:
+        return "A2"  # no gradable items yet — start everyone at the floor
+    band = _ITEM_BANDS[round(sum(indices) / len(indices))]
+    return "A2" if band == "A1" else band
+
+
+def _skill_area_from_items(track, rows):
+    """Lesson skill area via majority vote over item skill_types (grammar wins by track)."""
+    if track == "grammar":
+        return "grammar"
+    votes = {"vocabulary": 0, "listening": 0, "speaking": 0}
+    for _d, skill, item_type in rows:
+        area = _SKILL_AREA_FROM_ITEM.get((skill or item_type or "").lower())
+        if area in votes:
+            votes[area] += 1
+    # Highest vote wins; ties (and all-teaching lessons) fall back to vocabulary.
+    best = max(votes, key=lambda k: votes[k])
+    return best if votes[best] else "vocabulary"
+
+
+def _backfill_lesson_dimensions(conn, do_cefr, do_skill):
+    """Set cefr_level / skill_area for each lesson from its items (NULL rows only)."""
+    lessons = conn.execute(text("SELECT lesson_id, track FROM lessons")).fetchall()
+    updated = 0
+    for lesson_id, track in lessons:
+        # Email lessons are a separate path — leave their dimensions NULL.
+        if track == "email":
+            continue
+        rows = conn.execute(
+            text("SELECT difficulty, skill_type, type FROM items WHERE lesson_id = :lid"),
+            {"lid": lesson_id},
+        ).fetchall()
+        sets, params = [], {"lid": lesson_id}
+        if do_cefr:
+            sets.append("cefr_level = :cefr")
+            params["cefr"] = _cefr_from_items(rows)
+        if do_skill:
+            sets.append("skill_area = :skill")
+            params["skill"] = _skill_area_from_items(track, rows)
+        if not sets:
+            continue
+        result = conn.execute(
+            text(
+                f"UPDATE lessons SET {', '.join(sets)} "
+                "WHERE lesson_id = :lid AND (cefr_level IS NULL OR skill_area IS NULL)"
+            ),
+            params,
+        )
+        updated += result.rowcount or 0
+    logger.info(
+        "Backfilled lesson dimensions (cefr=%s, skill=%s) for %d lesson(s).",
+        do_cefr,
+        do_skill,
+        updated,
+    )
 
 
 # A fixed key for the Postgres advisory lock that serialises concurrent runs
@@ -139,6 +227,26 @@ def run():
             logger.info("Added lessons.role_category (default 'common').")
         else:
             logger.info("lessons.role_category already exists — skipping.")
+
+        # New lesson architecture: per-lesson CEFR band (A2-C2) and skill area
+        # (vocabulary | grammar | listening | speaking). Both nullable; backfilled
+        # ONCE from each lesson's own items right after the column is created, so
+        # later editorial curation is never overwritten on re-runs. Email-track
+        # lessons are left NULL (the email path doesn't use these dimensions).
+        added_cefr = "cefr_level" not in lesson_columns
+        if added_cefr:
+            conn.execute(text("ALTER TABLE lessons ADD COLUMN cefr_level VARCHAR"))
+            logger.info("Added lessons.cefr_level.")
+        else:
+            logger.info("lessons.cefr_level already exists — skipping.")
+        added_skill = "skill_area" not in lesson_columns
+        if added_skill:
+            conn.execute(text("ALTER TABLE lessons ADD COLUMN skill_area VARCHAR"))
+            logger.info("Added lessons.skill_area.")
+        else:
+            logger.info("lessons.skill_area already exists — skipping.")
+        if added_cefr or added_skill:
+            _backfill_lesson_dimensions(conn, do_cefr=added_cefr, do_skill=added_skill)
 
         # User progress: placement results (NULL until the user takes the
         # placement test). The table may not exist yet on a fresh database, in

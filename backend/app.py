@@ -8,8 +8,10 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from admin import (
+    ALLOWED_CEFR_LEVELS,
     ALLOWED_DIFFICULTY,
     ALLOWED_ROLE_CATEGORIES,
+    ALLOWED_SKILL_AREAS,
     ALLOWED_SKILL_TYPES,
     ALLOWED_TRACKS,
     MAX_ITEMS_PER_LESSON,
@@ -107,6 +109,11 @@ def serialize_lesson_meta(lesson, item_count, writing_practice=False):
         "lesson_id": lesson.lesson_id,
         "track": lesson.track,
         "role_category": lesson.role_category or "common",
+        # New lesson architecture (null for legacy/email lessons; the home falls
+        # back gracefully). cefr_level: A2-C2; skill_area: vocabulary|grammar|
+        # listening|speaking.
+        "cefr_level": lesson.cefr_level,
+        "skill_area": lesson.skill_area,
         "module": lesson.module,
         "title": lesson.title,
         "description": lesson.description,
@@ -831,6 +838,8 @@ def serialize_admin_lesson(lesson, items):
         "source": lesson.source,
         "track": lesson.track,
         "role_category": lesson.role_category or "common",
+        "cefr_level": lesson.cefr_level,
+        "skill_area": lesson.skill_area,
         "status": lesson.status,
         # True when items are being attached to an already-approved lesson.
         "existing": lesson.status == "approved",
@@ -979,6 +988,8 @@ def admin_generate_items():
                     lesson_id=f"dl_{uuid.uuid4().hex[:12]}",
                     track=entry["track"],
                     role_category=entry.get("role_category") or "common",
+                    cefr_level=entry.get("cefr_level"),
+                    skill_area=entry.get("skill_area"),
                     module=None,
                     title=entry["title_en"],
                     title_el=entry.get("title_el"),
@@ -1702,6 +1713,17 @@ def admin_edit_lesson(lesson_id):
                     400,
                 )
             lesson.role_category = payload["role_category"]
+        if "cefr_level" in payload:
+            # Allow clearing (None/empty) or a valid A2-C2 band.
+            value = payload["cefr_level"] or None
+            if value is not None and value not in ALLOWED_CEFR_LEVELS:
+                return jsonify({"error": f"Invalid cefr_level: '{value}'."}), 400
+            lesson.cefr_level = value
+        if "skill_area" in payload:
+            value = payload["skill_area"] or None
+            if value is not None and value not in ALLOWED_SKILL_AREAS:
+                return jsonify({"error": f"Invalid skill_area: '{value}'."}), 400
+            lesson.skill_area = value
 
         session.commit()
         items = session.query(Item).filter_by(lesson_id=lesson_id).order_by(Item.order_index).all()

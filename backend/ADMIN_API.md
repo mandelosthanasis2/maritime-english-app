@@ -74,6 +74,10 @@ part plus the same `source_text` / `kind` / `page_range` form fields (omit the
     {
       "lesson_id": "dl_xxxxxxxxxxxx",
       "title": "...",
+      "track": "maritime",
+      "role_category": "engineer",
+      "cefr_level": "B1",
+      "skill_area": "vocabulary",
       "status": "draft",
       "existing": false,
       "items": [ { "item_id": "draft_...", "status": "draft", ... } ]
@@ -84,6 +88,13 @@ part plus the same `source_text` / `kind` / `page_range` form fields (omit the
 
 Everything is created with `status: "draft"`, so nothing is visible to learners
 until a human approves it in `/admin`.
+
+Each generated lesson also carries two organising dimensions (the home groups
+the maritime path by them): `cefr_level` (the whole lesson's CEFR band, one of
+`A2 | B1 | B2 | C1 | C2`) and `skill_area` (`vocabulary | grammar | listening |
+speaking`). The generator suggests both; a reviewer can override them in
+`/admin` or via `POST /api/admin/lessons/<lesson_id>` (`cefr_level`,
+`skill_area`). Email-track lessons leave both `null` (separate path).
 
 ### Example (curl)
 
