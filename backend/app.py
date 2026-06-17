@@ -38,6 +38,7 @@ from models import (
     Lesson,
     UserItemStat,
     UserLessonCompletion,
+    UserLevelTest,
     UserProgress,
     UserSectionTest,
 )
@@ -217,6 +218,39 @@ def section_testable_items(session, cefr_level, skill_area):
     return [item for item, _lesson in rows if is_testable(item)]
 
 
+def level_testable_items_by_skill(session, cefr_level):
+    """{skill_area: [items]} of approved auto-graded items across a CEFR level."""
+    rows = _testable_items_query(session).filter(Lesson.cefr_level == cefr_level).all()
+    by_skill = {}
+    for item, lesson in rows:
+        if is_testable(item):
+            by_skill.setdefault(lesson.skill_area, []).append(item)
+    return by_skill
+
+
+def balanced_sample(pools, target):
+    """A balanced sample of up to `target` items, round-robin across `pools`.
+
+    `pools` is a list of item lists (one per skill). Each pool is shuffled, then
+    we take one item from each non-empty pool in turn until we reach `target` or
+    every pool is exhausted — so skills are represented as evenly as supply
+    allows. The result is shuffled so the skills interleave during the test.
+    """
+    queues = [list(p) for p in pools]
+    for q in queues:
+        random.shuffle(q)
+    picked = []
+    while len(picked) < target and any(queues):
+        for q in queues:
+            if not q:
+                continue
+            picked.append(q.pop())
+            if len(picked) >= target:
+                break
+    random.shuffle(picked)
+    return picked
+
+
 def writing_practice_lesson_ids(session):
     """Lesson ids holding an approved email_compose item (writing scenarios)."""
     rows = (
@@ -283,6 +317,16 @@ def serialize_progress(session, progress):
         }
         for s in section_rows
     ]
+    # Level-test results per CEFR level. "completed" = best_score >= pass mark.
+    level_rows = session.query(UserLevelTest).filter_by(user_id=progress.user_id).all()
+    level_tests = [
+        {
+            "cefr_level": l.cefr_level,
+            "best_score": l.best_score,
+            "completed": l.best_score is not None and l.best_score >= LESSON_PASS_SCORE,
+        }
+        for l in level_rows
+    ]
     return {
         "total_xp": progress.total_xp,
         "current_streak": progress.current_streak,
@@ -292,6 +336,7 @@ def serialize_progress(session, progress):
         "completed_lesson_ids": completed_ids,
         "passed_lesson_ids": passed_ids,
         "section_tests": section_tests,
+        "level_tests": level_tests,
         "lessons_completed": len(completed_ids),
         # Placement results; null until the user takes the placement test.
         "cefr_level": progress.cefr_level,
@@ -819,6 +864,103 @@ def section_test_complete(cefr_level, skill_area):
     except Exception:  # pragma: no cover - unexpected failure
         session.rollback()
         logger.exception("Section test complete failed")
+        return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+# --- Level tests (one per CEFR level, spanning all its skill areas) -----------
+
+
+@app.route("/api/levels/<cefr_level>/test", methods=["GET"])
+def level_test(cefr_level):
+    """A balanced random sample of the level's auto-graded items, across skills.
+
+    Like the section test but wider: it draws from every skill area of the level
+    (see balanced_sample) and is the level's final milestone. Returns 404 when
+    the whole level has fewer than TEST_MIN_ITEMS testable items (no level test).
+    """
+    if cefr_level not in ALLOWED_CEFR_LEVELS:
+        return jsonify({"error": "Unknown level."}), 404
+
+    session = SessionLocal()
+    try:
+        by_skill = level_testable_items_by_skill(session, cefr_level)
+        total = sum(len(items) for items in by_skill.values())
+        if total < TEST_MIN_ITEMS:
+            return (
+                jsonify({"error": "Αυτό το επίπεδο δεν έχει Level Test ακόμη.", "available": total}),
+                404,
+            )
+        sample = balanced_sample(list(by_skill.values()), TEST_TARGET_ITEMS)
+        return jsonify(
+            {
+                "cefr_level": cefr_level,
+                "available": total,
+                "items": [serialize_item(item) for item in sample],
+            }
+        )
+    finally:
+        session.close()
+
+
+@app.route("/api/levels/<cefr_level>/test/complete", methods=["POST"])
+def level_test_complete(cefr_level):
+    """Record a level-test attempt. Body: {"score": 0-100}.
+
+    Stores the best score for the level (never downgraded) and returns whether
+    the level is now completed (best_score >= pass mark).
+    """
+    if cefr_level not in ALLOWED_CEFR_LEVELS:
+        return jsonify({"error": "Unknown level."}), 404
+
+    try:
+        user_id, email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    payload = request.get_json(silent=True) or {}
+    raw_score = payload.get("score")
+    if not isinstance(raw_score, (int, float)) or isinstance(raw_score, bool):
+        return jsonify({"error": "Body must include a numeric 'score'."}), 400
+    score = max(0, min(100, int(round(raw_score))))
+
+    session = SessionLocal()
+    try:
+        get_or_create_progress(session, user_id, email)
+
+        row = (
+            session.query(UserLevelTest)
+            .filter_by(user_id=user_id, cefr_level=cefr_level)
+            .one_or_none()
+        )
+        now = datetime.now(timezone.utc)
+        if row is None:
+            row = UserLevelTest(
+                user_id=user_id,
+                cefr_level=cefr_level,
+                best_score=score,
+                passed_at=now if score >= LESSON_PASS_SCORE else None,
+            )
+            session.add(row)
+        else:
+            if row.best_score is None or score > row.best_score:
+                row.best_score = score
+            if row.passed_at is None and row.best_score >= LESSON_PASS_SCORE:
+                row.passed_at = now
+
+        session.commit()
+        return jsonify(
+            {
+                "cefr_level": cefr_level,
+                "score": score,
+                "best_score": row.best_score,
+                "completed": row.best_score >= LESSON_PASS_SCORE,
+            }
+        )
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Level test complete failed")
         return jsonify({"error": "Internal error."}), 500
     finally:
         session.close()

@@ -154,6 +154,35 @@ export async function completeSectionTest(level, skill, score) {
   return res.json()
 }
 
+// --- Level tests (one per CEFR level, spanning all its skills) ---------------
+
+// A fresh, balanced random sample of the level's auto-graded items.
+export function fetchLevelTest(level) {
+  return getJSON(`/api/levels/${encodeURIComponent(level)}/test`)
+}
+
+// Record a level-test attempt (score 0-100). Returns {best_score, completed}.
+export async function completeLevelTest(level, score) {
+  const headers = await authHeaders()
+  headers['Content-Type'] = 'application/json'
+  const res = await fetch(`${API_BASE_URL}/api/levels/${encodeURIComponent(level)}/test/complete`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ score }),
+  })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // keep generic
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
 // --- Smart practice (adaptive engine) ----------------------------------------
 
 export async function fetchNextExercise() {
