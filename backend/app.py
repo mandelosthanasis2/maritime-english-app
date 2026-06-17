@@ -17,6 +17,7 @@ from admin import (
     analyze_lesson_gaps,
     auto_categorize_lessons,
     extract_text_from_pdf,
+    generate_email_scenarios,
     generate_enrichment_items,
     generate_lessons,
     generate_teaching_for_lesson,
@@ -95,8 +96,13 @@ except Exception as exc:  # pragma: no cover - startup best effort
 # --- Serialization helpers ---------------------------------------------------
 
 
-def serialize_lesson_meta(lesson, item_count):
-    """Lesson metadata only (no items)."""
+def serialize_lesson_meta(lesson, item_count, writing_practice=False):
+    """Lesson metadata only (no items).
+
+    `writing_practice` is True for email-track lessons that hold an email_compose
+    item (the free-writing scenarios), so the home can split the email path into
+    "Μαθήματα" vs "Εξάσκηση γραψίματος".
+    """
     return {
         "lesson_id": lesson.lesson_id,
         "track": lesson.track,
@@ -109,6 +115,7 @@ def serialize_lesson_meta(lesson, item_count):
         "target_language": lesson.target_language,
         "version": lesson.version,
         "item_count": item_count,
+        "writing_practice": writing_practice,
     }
 
 
@@ -134,6 +141,20 @@ def item_counts(session):
         .all()
     )
     return dict(rows)
+
+
+def writing_practice_lesson_ids(session):
+    """Lesson ids holding an approved email_compose item (writing scenarios)."""
+    rows = (
+        session.query(Item.lesson_id)
+        .filter(
+            Item.status == "approved",
+            (Item.skill_type == "email_compose") | (Item.type == "email_compose"),
+        )
+        .distinct()
+        .all()
+    )
+    return {r[0] for r in rows}
 
 
 # --- Progress helpers --------------------------------------------------------
@@ -197,6 +218,7 @@ def list_lessons():
     session = SessionLocal()
     try:
         counts = item_counts(session)
+        writing_ids = writing_practice_lesson_ids(session)
         # Only approved lessons are user-visible (drafts stay hidden).
         lessons = (
             session.query(Lesson)
@@ -205,7 +227,12 @@ def list_lessons():
             .all()
         )
         return jsonify(
-            [serialize_lesson_meta(l, counts.get(l.lesson_id, 0)) for l in lessons]
+            [
+                serialize_lesson_meta(
+                    l, counts.get(l.lesson_id, 0), l.lesson_id in writing_ids
+                )
+                for l in lessons
+            ]
         )
     finally:
         session.close()
@@ -1026,6 +1053,105 @@ def admin_generate_items():
         return jsonify(
             {"error": f"Εσωτερικό σφάλμα κατά την αποθήκευση των items: {exc}"}
         ), 500
+    finally:
+        session.close()
+
+
+def create_scenario_lesson(session, title, scenario, instructions):
+    """Create a DRAFT email-track lesson holding one email_compose item.
+
+    This is how a "writing scenario" is stored — reusing the lesson/item model,
+    so it flows through the existing draft/approve, lesson player and XP paths.
+    Returns (lesson, item).
+    """
+    lesson = Lesson(
+        lesson_id=f"dl_{uuid.uuid4().hex[:12]}",
+        track="email",
+        role_category="common",
+        module=None,
+        title=(title or "").strip() or "Σενάριο γραψίματος",
+        interface_language="el",
+        target_language="en",
+        version=1,
+        status="draft",
+    )
+    session.add(lesson)
+    session.flush()
+    raw = {
+        "type": "email_compose",
+        "skill_type": "email_compose",
+        "level": "B1",
+        "difficulty": "B1",
+        "english": {
+            "scenario": (scenario or "").strip(),
+            "instructions": (instructions or "").strip(),
+        },
+    }
+    item = store_generated_item(session, raw, lesson.lesson_id, "email", "B1", 1)
+    return lesson, item
+
+
+@app.route("/api/admin/email-scenarios", methods=["POST"])
+def admin_create_email_scenario():
+    """Create one writing scenario by hand. Body: {title, scenario, instructions}."""
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    payload = request.get_json(silent=True) or {}
+    scenario = (payload.get("scenario") or "").strip()
+    if not scenario:
+        return jsonify({"error": "Το σενάριο είναι υποχρεωτικό."}), 400
+
+    session = SessionLocal()
+    try:
+        lesson, items = create_scenario_lesson(
+            session,
+            payload.get("title"),
+            scenario,
+            payload.get("instructions"),
+        )
+        session.commit()
+        return jsonify({"lessons": [serialize_admin_lesson(lesson, [items])]})
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Creating email scenario failed")
+        return jsonify({"error": "Internal error creating scenario."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/email-scenarios/generate", methods=["POST"])
+def admin_generate_email_scenarios():
+    """Generate writing scenarios with AI. Body: {topic, count}. Stores drafts."""
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        scenarios = generate_email_scenarios(payload.get("topic", ""), payload.get("count", 5))
+    except AdminGenError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        result = []
+        for spec in scenarios:
+            lesson, item = create_scenario_lesson(
+                session, spec.get("title"), spec.get("scenario"), spec.get("instructions")
+            )
+            result.append((lesson, [item]))
+        session.commit()
+        return jsonify(
+            {"lessons": [serialize_admin_lesson(l, items) for l, items in result]}
+        )
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Generating email scenarios failed")
+        return jsonify({"error": "Internal error generating scenarios."}), 500
     finally:
         session.close()
 

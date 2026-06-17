@@ -12,15 +12,6 @@ const TRACK_META = {
   email: { icon: '✉️', label: 'Email' },
 }
 
-// Email Writing is its own content track, shown as a dedicated home group
-// (alongside the role groups) rather than mixed into the maritime role buckets.
-const EMAIL_GROUP = {
-  key: 'email',
-  icon: '✉️',
-  kicker: 'Επαγγελματικά Αγγλικά',
-  title: 'Email Writing',
-}
-
 // Top-level "learning paths" the home splits into. "maritime" bundles the
 // maritime + grammar tracks (shown as role groups); "email" is the email track.
 // Adding a future path is just another entry here plus its grouping below.
@@ -28,6 +19,24 @@ const LEARNING_PATHS = [
   { key: 'maritime', icon: '📘', label: 'Ναυτικά Αγγλικά' },
   { key: 'email', icon: '✉️', label: 'Email Writing' },
 ]
+
+// Within the Email Writing path: standard lessons vs free-writing scenarios.
+const EMAIL_SUBTABS = [
+  { key: 'lessons', icon: '📚', label: 'Μαθήματα' },
+  { key: 'writing', icon: '✍️', label: 'Εξάσκηση γραψίματος' },
+]
+const EMAIL_LESSONS_GROUP = {
+  key: 'email',
+  icon: '📚',
+  kicker: 'Email Writing',
+  title: 'Μαθήματα',
+}
+const EMAIL_WRITING_GROUP = {
+  key: 'email',
+  icon: '✍️',
+  kicker: 'Email Writing',
+  title: 'Εξάσκηση γραψίματος',
+}
 
 // The lesson list is organised by who the lesson is for. Unknown/missing
 // categories fall back to "common" so nothing ever disappears from the home.
@@ -344,6 +353,7 @@ function LessonSection({ group, lessons, completedSet }) {
 function Home() {
   const [lessons, setLessons] = useState([])
   const [activePath, setActivePath] = useState('maritime')
+  const [emailSub, setEmailSub] = useState('lessons')
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
 
@@ -472,13 +482,58 @@ function Home() {
                   />
                 ))}
 
-              {currentPath === 'email' && (
-                <LessonSection
-                  group={EMAIL_GROUP}
-                  lessons={emailLessons}
-                  completedSet={completedSet}
-                />
-              )}
+              {currentPath === 'email' &&
+                (() => {
+                  const standardEmail = emailLessons.filter((l) => !l.writing_practice)
+                  const writingEmail = emailLessons.filter((l) => l.writing_practice)
+                  const subLessons = { lessons: standardEmail, writing: writingEmail }
+                  const availableSub = EMAIL_SUBTABS.filter(
+                    (s) => subLessons[s.key].length > 0,
+                  )
+                  const currentSub = availableSub.some((s) => s.key === emailSub)
+                    ? emailSub
+                    : availableSub[0]?.key
+
+                  return (
+                    <>
+                      {availableSub.length > 1 && (
+                        <div
+                          className="home-tabs home-tabs--sub"
+                          role="tablist"
+                          aria-label="Email Writing"
+                        >
+                          {availableSub.map((s) => (
+                            <button
+                              key={s.key}
+                              type="button"
+                              role="tab"
+                              aria-selected={currentSub === s.key}
+                              className={`home-tab${currentSub === s.key ? ' home-tab--active' : ''}`}
+                              onClick={() => setEmailSub(s.key)}
+                            >
+                              <span aria-hidden="true">{s.icon}</span> {s.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {currentSub === 'lessons' && (
+                        <LessonSection
+                          group={EMAIL_LESSONS_GROUP}
+                          lessons={standardEmail}
+                          completedSet={completedSet}
+                        />
+                      )}
+                      {currentSub === 'writing' && (
+                        <LessonSection
+                          group={EMAIL_WRITING_GROUP}
+                          lessons={writingEmail}
+                          completedSet={completedSet}
+                        />
+                      )}
+                    </>
+                  )
+                })()}
             </>
           )
         })()}

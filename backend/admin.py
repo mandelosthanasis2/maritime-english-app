@@ -122,13 +122,12 @@ LESSON STRUCTURE, SIZE & PACING (mandatory for every lesson)
   5. (maritime/grammar only) At least ONE roleplay item (type "dialogue", skill_type "roleplay") at the END — applying the material in a realistic dialogue — whenever it fits the topic.
 - VARIETY: do not place many items of the same type back-to-back; alternate types so the lesson has rhythm.
 
-EMAIL WRITING LESSONS (track "email") — STRUCTURE (allowed item types: teaching, vocabulary, fill_gap, and ONE email_compose; NO speaking, NO roleplay, NO listening, NO word_order):
+EMAIL WRITING LESSONS (track "email") — STRUCTURE (allowed item types: teaching, vocabulary, fill_gap; NO speaking, NO roleplay, NO listening, NO word_order, NO email_compose):
 - email is WRITTEN, not spoken, so an email lesson must NOT contain any speaking, dialogue/roleplay or listening items.
 - 1-2 "teaching" items first: explain in Greek what this email is and WHEN you write it, and lay out its STRUCTURE — greeting -> context -> main point -> request -> closing. The teaching note must include a FULL example email (in English) annotated by section, with a clear Greek explanation. Use explanations.el.examples for 2-3 short bilingual phrase examples.
 - then "vocabulary" items for the SET EMAIL PHRASES as multiple choice (English fixed phrase -> pick the Greek meaning), e.g. "I am writing to inform you that...", "Please find attached...", "We kindly request...", "I look forward to your reply.". Same vocabulary shape (text/phonetic/answer/options) as below; distractors are other plausible email phrases' meanings.
 - then "fill_gap" items: a HALF/partial email with blanks where the learner picks the correct set phrase from the options (the gap_text shows the email with ___; "answer" is the correct phrase; "options" are 3-4 plausible email phrases).
-- END the lesson with EXACTLY ONE "email_compose" capstone item: a realistic GREEK scenario asking the learner to WRITE the whole email themselves, with "instructions" listing the key points to include. This is the climax of the lesson — the learner's email is assessed by AI feedback, so it has no answer/options.
-- Keep the same 12-18 item sizing and NO-REPETITION rules. Besides that single closing email_compose, use only teaching / vocabulary / fill_gap.
+- close with more fill_gap or vocabulary. Keep the same 12-18 item sizing and NO-REPETITION rules. Do NOT add an email_compose item — free-writing practice lives in a separate "writing scenarios" area, not inside these lessons.
 
 CRITICAL RULES
 - GRAMMAR items: explanations.el.note MUST contain a clear Greek explanation of the grammar rule the item practises — what the rule is, and how/when it is used — in simple words for a Greek beginner. This is mandatory for every grammar item.
@@ -868,3 +867,87 @@ def generate_enrichment_items(title, track, role_category, digest, needed):
     if not items:
         raise AdminGenError("Ο generator δεν επέστρεψε έγκυρα items. Δοκίμασε ξανά.", 502)
     return items
+
+
+# --- Email writing scenarios ---------------------------------------------------
+#
+# Free-writing practice prompts for the email track. Each scenario becomes a
+# standalone email-track lesson holding a single email_compose item (assessed by
+# AI feedback). The admin can write them by hand or generate a batch here.
+
+MAX_EMAIL_SCENARIOS = 12
+
+EMAIL_SCENARIO_SYSTEM_PROMPT = """You design WRITING-PRACTICE scenarios for Greek seafarers learning to write professional emails in English. Each scenario asks the learner to WRITE a complete email for a realistic shipboard situation; their email is then assessed by an AI tutor.
+
+You receive a TOPIC and a COUNT. Produce exactly COUNT DISTINCT scenarios.
+
+OUTPUT: ONLY a JSON array of objects, no prose, no code fences:
+{
+  "title": "<short Greek label, e.g. 'Αναφορά βλάβης γεννήτριας'>",
+  "scenario": "<the situation + task, IN GREEK, 1-3 sentences, e.g. 'Η γεννήτρια Νο.2 σταμάτησε λόγω υπερθέρμανσης. Γράψε email στην εταιρεία να αναφέρεις το πρόβλημα.'>",
+  "instructions": "<GREEK guidance: the key points the email should include>"
+}
+
+RULES
+- Realistic maritime situations (engine room, deck, cargo, safety, port, crew, company office).
+- ALL text in Greek. Vary the situations; no duplicates.
+- Output ONLY the JSON array."""
+
+
+def generate_email_scenarios(topic, count):
+    """Generate writing-practice scenarios via Claude; returns list of dicts.
+
+    Each dict: {"title", "scenario", "instructions"} (all Greek). Reuses the same
+    Anthropic setup as the other generators.
+    """
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        count = 5
+    count = max(1, min(MAX_EMAIL_SCENARIOS, count))
+
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        logger.error("ANTHROPIC_API_KEY is not set; scenario generation unavailable.")
+        raise AdminGenError("Item generation is not configured on the server.", 503)
+    try:
+        import anthropic
+    except ImportError as exc:  # pragma: no cover - dependency missing
+        logger.exception("anthropic SDK failed to import.")
+        raise AdminGenError("Item generation is not available on the server.", 503) from exc
+
+    topic = (topic or "").strip() or "γενικά επαγγελματικά email προς την εταιρεία"
+    user_prompt = (
+        f"TOPIC: {topic}\nCOUNT: {count}\n\nProduce {count} distinct scenarios as a JSON array."
+    )
+    client = anthropic.Anthropic()
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=4000,
+            system=EMAIL_SCENARIO_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            output_config={"effort": "medium"},
+        )
+    except anthropic.APIError as exc:
+        logger.warning("Anthropic call failed for email scenarios: %s", exc)
+        raise AdminGenError("The generator is unavailable right now.", 502) from exc
+
+    text = "".join(b.text for b in response.content if b.type == "text")
+    raws = _parse_json_array(text)
+
+    scenarios = []
+    for raw in raws[:count]:
+        scenario = (raw.get("scenario") or "").strip()
+        if not scenario:
+            continue
+        scenarios.append(
+            {
+                "title": (raw.get("title") or "").strip() or "Σενάριο γραψίματος",
+                "scenario": scenario,
+                "instructions": (raw.get("instructions") or "").strip(),
+            }
+        )
+    if not scenarios:
+        raise AdminGenError("Ο generator δεν επέστρεψε έγκυρα σενάρια. Δοκίμασε ξανά.", 502)
+    return scenarios

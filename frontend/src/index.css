@@ -1563,6 +1563,16 @@ h3 {
   box-shadow: var(--sh-teal);
 }
 
+/* Sub-tabs inside a path (e.g. Email Writing -> Μαθήματα / Εξάσκηση). */
+.home-tabs--sub {
+  margin-top: 0.1rem;
+}
+
+.home-tabs--sub .home-tab {
+  font-size: 0.88rem;
+  padding: 0.55rem 0.6rem;
+}
+
 .home-section {
   display: flex;
   flex-direction: column;
@@ -2013,6 +2023,12 @@ h3 {
   margin: 0;
   font-size: 1.1rem;
   color: var(--heading);
+}
+
+.admin-subhead {
+  margin: 0.4rem 0 0;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
 }
 
 .admin-field {
