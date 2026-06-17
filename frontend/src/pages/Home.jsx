@@ -50,6 +50,10 @@ const SKILL_AREAS = [
 ]
 const SKILL_KEYS = new Set(SKILL_AREAS.map((s) => s.key))
 
+// A section shows a module test only when it has at least this many auto-graded
+// items across its lessons (mirrors the backend's TEST_MIN_ITEMS).
+const TEST_MIN_ITEMS = 4
+
 // Bucket a lesson, never losing it: an unknown/missing level falls back to a
 // middle band, an unknown/missing skill to vocabulary (legacy lessons created
 // before these dimensions existed are backfilled, so this is just a safety net).
@@ -423,9 +427,58 @@ function PathLessonCard({ lesson, state, step }) {
   )
 }
 
+// The module-test node — the LAST step of a section's path. State:
+//   locked    — not all lessons passed: 🔒, not a link.
+//   available — all lessons passed, not yet mastered: highlighted, 📝.
+//   done      — section mastered (test ≥75%): ✓ + score (still re-takeable).
+function TestNode({ level, skill, state, score }) {
+  const marker = state === 'done' ? '✓' : state === 'locked' ? '🔒' : '📝'
+  const stateClass =
+    state === 'done'
+      ? 'lesson-card--done'
+      : state === 'locked'
+        ? 'lesson-card--locked'
+        : 'lesson-card--current'
+  const sub =
+    state === 'locked'
+      ? '🔒 Ολοκλήρωσε όλα τα μαθήματα'
+      : state === 'done'
+        ? `✓ Πέρασες · Σκορ ${score}%`
+        : typeof score === 'number'
+          ? `Ξαναδοκίμασε · τελευταίο ${score}%`
+          : 'Δοκίμασε το τεστ της ενότητας'
+  const body = (
+    <>
+      <div className="lesson-card__top">
+        <span className="lesson-card__track">📝 Τεστ ενότητας</span>
+      </div>
+      <h3 className="lesson-card__title">Τεστ ενότητας</h3>
+      <span className="lesson-card__count">{sub}</span>
+    </>
+  )
+  const cardClass = `lesson-card lesson-card--path lesson-card--test ${stateClass}`
+  return (
+    <li className={`lesson-path__node lesson-path__node--test lesson-path__node--${state}`}>
+      <span className={`lesson-path__marker lesson-path__marker--${state}`} aria-hidden="true">
+        {marker}
+      </span>
+      {state === 'locked' ? (
+        <div className={cardClass} aria-disabled="true" title="Ολοκλήρωσε πρώτα όλα τα μαθήματα">
+          {body}
+        </div>
+      ) : (
+        <Link to={`/test/${level}/${skill}`} className={cardClass}>
+          {body}
+        </Link>
+      )}
+    </li>
+  )
+}
+
 // One skill section as a sequential PATH with strict unlocking: the first lesson
-// is always open; each next opens only once the previous is passed (≥75%).
-function SkillPath({ meta, lessons, passedSet }) {
+// is always open; each next opens only once the previous is passed (≥75%). When
+// the section has enough auto-graded items, a module-test node closes the path.
+function SkillPath({ meta, level, lessons, passedSet, sectionTest }) {
   const ordered = orderLessons(lessons)
   let prevPassed = true // the first lesson is always unlocked
   const nodes = ordered.map((lesson, i) => {
@@ -434,6 +487,12 @@ function SkillPath({ meta, lessons, passedSet }) {
     prevPassed = passed
     return { lesson, state, step: i + 1 }
   })
+
+  const gradableTotal = ordered.reduce((sum, l) => sum + (l.gradable_count || 0), 0)
+  const hasTest = gradableTotal >= TEST_MIN_ITEMS
+  const allPassed = ordered.every((l) => passedSet.has(l.lesson_id))
+  const testState = sectionTest?.mastered ? 'done' : allPassed ? 'available' : 'locked'
+
   return (
     <section className="home-section">
       <header className="home-section__head">
@@ -449,6 +508,14 @@ function SkillPath({ meta, lessons, passedSet }) {
         {nodes.map(({ lesson, state, step }) => (
           <PathLessonCard key={lesson.lesson_id} lesson={lesson} state={state} step={step} />
         ))}
+        {hasTest && (
+          <TestNode
+            level={level}
+            skill={meta.key}
+            state={testState}
+            score={sectionTest?.best_score}
+          />
+        )}
       </ol>
     </section>
   )
@@ -457,7 +524,7 @@ function SkillPath({ meta, lessons, passedSet }) {
 // One CEFR level block: a level header (marked when it's the user's placement
 // level) followed by the 4 skill paths that actually have lessons. The home
 // scrolls to the user's level on load via the forwarded ref.
-function LevelSection({ level, lessons, passedSet, isUserLevel, innerRef }) {
+function LevelSection({ level, lessons, passedSet, sectionTests, isUserLevel, innerRef }) {
   const bySkill = SKILL_AREAS.map((meta) => ({
     meta,
     lessons: lessons.filter((l) => lessonSkill(l) === meta.key),
@@ -478,7 +545,14 @@ function LevelSection({ level, lessons, passedSet, isUserLevel, innerRef }) {
         {isUserLevel && <span className="home-level__you-badge">Το επίπεδό σου</span>}
       </header>
       {bySkill.map(({ meta, lessons: skillLessons }) => (
-        <SkillPath key={meta.key} meta={meta} lessons={skillLessons} passedSet={passedSet} />
+        <SkillPath
+          key={meta.key}
+          meta={meta}
+          level={level}
+          lessons={skillLessons}
+          passedSet={passedSet}
+          sectionTest={sectionTests.get(`${level}:${meta.key}`)}
+        />
       ))}
     </section>
   )
@@ -488,7 +562,7 @@ function LevelSection({ level, lessons, passedSet, isUserLevel, innerRef }) {
 // sections. On first load it gently scrolls to the user's placement level so
 // they start where they belong — every level stays visible and browseable
 // (no locking yet; that's a later part).
-function MaritimePath({ lessons, passedSet, userLevel }) {
+function MaritimePath({ lessons, passedSet, sectionTests, userLevel }) {
   const youRef = useRef(null)
   const didScroll = useRef(false)
 
@@ -519,6 +593,7 @@ function MaritimePath({ lessons, passedSet, userLevel }) {
           level={level}
           lessons={levelLessons}
           passedSet={passedSet}
+          sectionTests={sectionTests}
           isUserLevel={level === userLevel}
           innerRef={level === userLevel ? youRef : undefined}
         />
@@ -578,6 +653,10 @@ function Home() {
   const completedSet = new Set(progress?.completed_lesson_ids || [])
   // Lessons passed (≥75% or grandfathered) — drives the skill-tree unlock/✓.
   const passedSet = new Set(progress?.passed_lesson_ids || [])
+  // Module-test results keyed "cefr_level:skill_area" — drives the test node.
+  const sectionTests = new Map(
+    (progress?.section_tests || []).map((t) => [`${t.cefr_level}:${t.skill_area}`, t]),
+  )
 
   return (
     <div className="home">
@@ -648,6 +727,7 @@ function Home() {
                 <MaritimePath
                   lessons={maritimeLessons}
                   passedSet={passedSet}
+                  sectionTests={sectionTests}
                   userLevel={userLessonLevel(progress?.cefr_level)}
                 />
               )}

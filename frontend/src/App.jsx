@@ -7,6 +7,7 @@ import Login from './pages/Login.jsx'
 import Placement from './pages/Placement.jsx'
 import Practice from './pages/Practice.jsx'
 import RoleSelect from './pages/RoleSelect.jsx'
+import SectionTest from './pages/SectionTest.jsx'
 import AccountMenu from './components/AccountMenu.jsx'
 import { useAuth } from './auth/AuthContext.jsx'
 import { fetchMyProgress } from './api.js'
@@ -134,6 +135,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/lessons/:lessonId" element={<Lesson />} />
+          <Route path="/test/:level/:skill" element={<SectionTest />} />
           <Route path="/placement" element={<Placement />} />
           <Route path="/practice" element={<Practice />} />
           <Route path="/role" element={<RoleSelect />} />

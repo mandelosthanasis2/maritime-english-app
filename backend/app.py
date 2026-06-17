@@ -1,10 +1,11 @@
 import logging
+import random
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from admin import (
@@ -32,9 +33,17 @@ from auth import ADMIN_API_KEY_HEADER, AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
 from email_feedback import EmailFeedbackError, generate_feedback as email_feedback
 from rate_limit import RateLimiter
-from models import Item, Lesson, UserItemStat, UserLessonCompletion, UserProgress
+from models import (
+    Item,
+    Lesson,
+    UserItemStat,
+    UserLessonCompletion,
+    UserProgress,
+    UserSectionTest,
+)
 from placement import (
     grade_answer,
+    is_testable,
     score_grammar,
     score_maritime,
     section_for_track,
@@ -72,6 +81,15 @@ XP_PRACTICE_WRONG = 1
 # (legacy completions, or lessons with no auto-graded items) is grandfathered.
 LESSON_PASS_SCORE = 75
 
+# Module test (one per section = cefr_level + skill_area). Draws a random sample
+# of the section's auto-graded items each attempt; uses all of them when the
+# section has fewer than the target. A section with fewer than TEST_MIN_ITEMS
+# testable items has NO module test. Pass mark is the same as a lesson (75).
+TEST_TARGET_ITEMS = 20
+TEST_MIN_ITEMS = 4
+# Item kinds we can auto-grade in a test (same set the placement test uses).
+TESTABLE_ITEM_TYPES = ("vocabulary", "fill_gap", "word_order")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -103,12 +121,16 @@ except Exception as exc:  # pragma: no cover - startup best effort
 # --- Serialization helpers ---------------------------------------------------
 
 
-def serialize_lesson_meta(lesson, item_count, writing_practice=False):
+def serialize_lesson_meta(lesson, item_count, writing_practice=False, gradable_count=None):
     """Lesson metadata only (no items).
 
     `writing_practice` is True for email-track lessons that hold an email_compose
     item (the free-writing scenarios), so the home can split the email path into
     "Μαθήματα" vs "Εξάσκηση γραψίματος".
+
+    `gradable_count` is the number of approved auto-graded items in the lesson
+    (fill_gap / word_order / vocabulary choice). The home sums it per section to
+    decide whether that section has a module test. None when not computed.
     """
     return {
         "lesson_id": lesson.lesson_id,
@@ -130,6 +152,7 @@ def serialize_lesson_meta(lesson, item_count, writing_practice=False):
         "target_language": lesson.target_language,
         "version": lesson.version,
         "item_count": item_count,
+        "gradable_count": gradable_count,
         "writing_practice": writing_practice,
     }
 
@@ -156,6 +179,42 @@ def item_counts(session):
         .all()
     )
     return dict(rows)
+
+
+def _testable_items_query(session):
+    """Approved auto-graded items in approved, non-email lessons (joined to Lesson)."""
+    return (
+        session.query(Item, Lesson)
+        .join(Lesson, Item.lesson_id == Lesson.lesson_id)
+        .filter(
+            Item.status == "approved",
+            Lesson.status == "approved",
+            Lesson.track != "email",
+            or_(
+                Item.skill_type.in_(TESTABLE_ITEM_TYPES),
+                Item.type.in_(TESTABLE_ITEM_TYPES),
+            ),
+        )
+    )
+
+
+def gradable_counts(session):
+    """Return {lesson_id: count of approved auto-graded items} for module tests."""
+    counts = {}
+    for item, _lesson in _testable_items_query(session).all():
+        if is_testable(item):
+            counts[item.lesson_id] = counts.get(item.lesson_id, 0) + 1
+    return counts
+
+
+def section_testable_items(session, cefr_level, skill_area):
+    """All approved auto-graded items for a (cefr_level, skill_area) section."""
+    rows = (
+        _testable_items_query(session)
+        .filter(Lesson.cefr_level == cefr_level, Lesson.skill_area == skill_area)
+        .all()
+    )
+    return [item for item, _lesson in rows if is_testable(item)]
 
 
 def writing_practice_lesson_ids(session):
@@ -208,6 +267,22 @@ def serialize_progress(session, progress):
     # best score is >= the pass mark, or NULL (legacy / un-scored completions are
     # grandfathered). The home uses this set for the strict unlock + the ✓ state.
     passed_ids = [lid for lid, score in rows if score is None or score >= LESSON_PASS_SCORE]
+    # Module-test results per section (cefr_level + skill_area). The home shows
+    # the test node's ✓/score from these; "mastered" = best_score >= pass mark.
+    section_rows = (
+        session.query(UserSectionTest)
+        .filter_by(user_id=progress.user_id)
+        .all()
+    )
+    section_tests = [
+        {
+            "cefr_level": s.cefr_level,
+            "skill_area": s.skill_area,
+            "best_score": s.best_score,
+            "mastered": s.best_score is not None and s.best_score >= LESSON_PASS_SCORE,
+        }
+        for s in section_rows
+    ]
     return {
         "total_xp": progress.total_xp,
         "current_streak": progress.current_streak,
@@ -216,6 +291,7 @@ def serialize_progress(session, progress):
         else None,
         "completed_lesson_ids": completed_ids,
         "passed_lesson_ids": passed_ids,
+        "section_tests": section_tests,
         "lessons_completed": len(completed_ids),
         # Placement results; null until the user takes the placement test.
         "cefr_level": progress.cefr_level,
@@ -239,6 +315,7 @@ def list_lessons():
     try:
         counts = item_counts(session)
         writing_ids = writing_practice_lesson_ids(session)
+        gradable = gradable_counts(session)
         # Only approved lessons are user-visible (drafts stay hidden).
         lessons = (
             session.query(Lesson)
@@ -249,7 +326,10 @@ def list_lessons():
         return jsonify(
             [
                 serialize_lesson_meta(
-                    l, counts.get(l.lesson_id, 0), l.lesson_id in writing_ids
+                    l,
+                    counts.get(l.lesson_id, 0),
+                    l.lesson_id in writing_ids,
+                    gradable.get(l.lesson_id, 0),
                 )
                 for l in lessons
             ]
@@ -637,6 +717,108 @@ def placement_submit():
     except Exception:  # pragma: no cover - unexpected failure
         session.rollback()
         logger.exception("Placement submit failed")
+        return jsonify({"error": "Internal error."}), 500
+    finally:
+        session.close()
+
+
+# --- Module tests (one per section: cefr_level + skill_area) ------------------
+
+
+@app.route("/api/sections/<cefr_level>/<skill_area>/test", methods=["GET"])
+def section_test(cefr_level, skill_area):
+    """A random sample of the section's auto-graded items, as a playable test.
+
+    Items carry their full data (answers included), like the lesson player —
+    scoring happens client-side via the same onResult path. A fresh random
+    sample is drawn each call so retries are not identical. Returns 404 when the
+    section has fewer than TEST_MIN_ITEMS testable items (no test exists).
+    """
+    if cefr_level not in ALLOWED_CEFR_LEVELS or skill_area not in ALLOWED_SKILL_AREAS:
+        return jsonify({"error": "Unknown section."}), 404
+
+    session = SessionLocal()
+    try:
+        pool = section_testable_items(session, cefr_level, skill_area)
+        if len(pool) < TEST_MIN_ITEMS:
+            return (
+                jsonify({"error": "Αυτή η ενότητα δεν έχει test ακόμη.", "available": len(pool)}),
+                404,
+            )
+        sample = random.sample(pool, min(TEST_TARGET_ITEMS, len(pool)))
+        random.shuffle(sample)
+        return jsonify(
+            {
+                "cefr_level": cefr_level,
+                "skill_area": skill_area,
+                "available": len(pool),
+                "items": [serialize_item(item) for item in sample],
+            }
+        )
+    finally:
+        session.close()
+
+
+@app.route("/api/sections/<cefr_level>/<skill_area>/test/complete", methods=["POST"])
+def section_test_complete(cefr_level, skill_area):
+    """Record a module-test attempt. Body: {"score": 0-100}.
+
+    Stores the best score ever achieved for the section (never downgraded) and
+    returns whether the section is now mastered (best_score >= pass mark).
+    """
+    if cefr_level not in ALLOWED_CEFR_LEVELS or skill_area not in ALLOWED_SKILL_AREAS:
+        return jsonify({"error": "Unknown section."}), 404
+
+    try:
+        user_id, email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    payload = request.get_json(silent=True) or {}
+    raw_score = payload.get("score")
+    if not isinstance(raw_score, (int, float)) or isinstance(raw_score, bool):
+        return jsonify({"error": "Body must include a numeric 'score'."}), 400
+    score = max(0, min(100, int(round(raw_score))))
+
+    session = SessionLocal()
+    try:
+        # Make sure the user's progress row exists (keeps the email in sync).
+        get_or_create_progress(session, user_id, email)
+
+        row = (
+            session.query(UserSectionTest)
+            .filter_by(user_id=user_id, cefr_level=cefr_level, skill_area=skill_area)
+            .one_or_none()
+        )
+        now = datetime.now(timezone.utc)
+        if row is None:
+            row = UserSectionTest(
+                user_id=user_id,
+                cefr_level=cefr_level,
+                skill_area=skill_area,
+                best_score=score,
+                passed_at=now if score >= LESSON_PASS_SCORE else None,
+            )
+            session.add(row)
+        else:
+            if row.best_score is None or score > row.best_score:
+                row.best_score = score
+            if row.passed_at is None and row.best_score >= LESSON_PASS_SCORE:
+                row.passed_at = now
+
+        session.commit()
+        return jsonify(
+            {
+                "cefr_level": cefr_level,
+                "skill_area": skill_area,
+                "score": score,
+                "best_score": row.best_score,
+                "mastered": row.best_score >= LESSON_PASS_SCORE,
+            }
+        )
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Section test complete failed")
         return jsonify({"error": "Internal error."}), 500
     finally:
         session.close()

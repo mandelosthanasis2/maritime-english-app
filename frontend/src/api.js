@@ -124,6 +124,36 @@ export async function setMyRole(role) {
   return res.json()
 }
 
+// --- Module tests (one per section: cefr_level + skill_area) -----------------
+
+// A fresh random sample of the section's auto-graded items to play as a test.
+export function fetchSectionTest(level, skill) {
+  return getJSON(
+    `/api/sections/${encodeURIComponent(level)}/${encodeURIComponent(skill)}/test`,
+  )
+}
+
+// Record a module-test attempt (score 0-100). Returns {best_score, mastered}.
+export async function completeSectionTest(level, skill, score) {
+  const headers = await authHeaders()
+  headers['Content-Type'] = 'application/json'
+  const res = await fetch(
+    `${API_BASE_URL}/api/sections/${encodeURIComponent(level)}/${encodeURIComponent(skill)}/test/complete`,
+    { method: 'POST', headers, body: JSON.stringify({ score }) },
+  )
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const body = await res.json()
+      if (body && body.error) message = body.error
+    } catch {
+      // keep generic
+    }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
 // --- Smart practice (adaptive engine) ----------------------------------------
 
 export async function fetchNextExercise() {

@@ -163,3 +163,27 @@ class UserItemStat(Base):
     wrong_count = Column(Integer, nullable=False, default=0)
     last_correct = Column(Boolean)  # outcome of the most recent attempt
     last_answered_at = Column(DateTime(timezone=True))  # for spaced repetition
+
+
+class UserSectionTest(Base):
+    """One row per (user, section) — the user's module-test result for a section.
+
+    A "section" is a (cefr_level, skill_area) pair on the maritime path, e.g.
+    "A2 / vocabulary". best_score is the highest module-test score (0-100) the
+    user has achieved; the section is "mastered" when best_score >= the pass
+    mark. passed_at records the first time it was mastered. Created lazily on the
+    first test attempt; absent rows simply mean "not attempted yet".
+    """
+
+    __tablename__ = "user_section_tests"
+    __table_args__ = (
+        UniqueConstraint("user_id", "cefr_level", "skill_area", name="uq_user_section_test"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    cefr_level = Column(String, nullable=False)
+    skill_area = Column(String, nullable=False)
+    best_score = Column(Integer)  # 0-100; highest module-test score achieved
+    passed_at = Column(DateTime(timezone=True))  # first time best_score >= pass mark
+
