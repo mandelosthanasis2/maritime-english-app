@@ -281,8 +281,9 @@ async function adminResponseError(res) {
     )
   }
   let message = ''
+  let data = null
   try {
-    const data = await res.json()
+    data = await res.json()
     if (data && data.error) message = data.error
   } catch {
     // body wasn't JSON
@@ -293,7 +294,11 @@ async function adminResponseError(res) {
         ? `Εσωτερικό σφάλμα server (${res.status}).`
         : `Το αίτημα απέτυχε (${res.status}).`
   }
-  return new Error(message)
+  const err = new Error(message)
+  // Keep the parsed body so callers can read structured fields (e.g. the
+  // skill-area mismatch list returned by the approve gate, status 422).
+  if (data && typeof data === 'object') err.body = data
+  return err
 }
 
 // A failed fetch() (rejected promise) means the response never arrived: a
@@ -371,10 +376,18 @@ export function adminGenerateEmailScenarios({ topic, count }) {
   })
 }
 
-export function adminApproveLesson(lessonId) {
+// Approve (publish) a lesson. The backend refuses (422) when a maritime lesson
+// holds items that don't fit its skill_area; pass { force: true } to override.
+export function adminApproveLesson(lessonId, { force = false } = {}) {
   return adminRequest(`/api/admin/lessons/${encodeURIComponent(lessonId)}/approve`, {
     method: 'POST',
+    body: { force },
   })
+}
+
+// Map of {lesson_id: [bad items]} across maritime lessons — read-only indicator.
+export function adminSkillMismatches() {
+  return adminRequest('/api/admin/skill-mismatches')
 }
 
 export function adminEditLesson(lessonId, changes) {

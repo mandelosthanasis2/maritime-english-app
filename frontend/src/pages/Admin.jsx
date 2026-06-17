@@ -14,6 +14,7 @@ import {
   adminGenerateItems,
   adminEnrichLesson,
   adminGenerateTeaching,
+  adminSkillMismatches,
   fetchLessons,
 } from '../api.js'
 
@@ -120,6 +121,11 @@ function ItemEditor({ item, moveTargets, onError, onChange }) {
       <div className="admin-item__head">
         {isTeaching && <span className="badge badge--teaching">ΔΙΔΑΣΚΑΛΙΑ</span>}
         <span className="badge badge--type">{item.type}</span>
+        {item.skill_mismatch && (
+          <span className="badge badge--warn" title="Ο τύπος δεν ταιριάζει στη δεξιότητα του μαθήματος">
+            ⚠ εκτός δεξιότητας
+          </span>
+        )}
         <span className="admin-card__id">{item.item_id}</span>
       </div>
 
@@ -220,6 +226,7 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
   const [source, setSource] = useState(group.source || '')
   const [busy, setBusy] = useState(null)
   const [note, setNote] = useState(null) // inline error shown ON this card
+  const [warn, setWarn] = useState(null) // skill-area mismatch (422) awaiting override
 
   function headerPayload() {
     const payload = {
@@ -272,9 +279,11 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
     }
   }
 
-  async function approve() {
+  // force=true publishes despite a skill-area mismatch (the admin's override).
+  async function approve(force = false) {
     setBusy('approve')
     setNote(null)
+    if (!force) setWarn(null)
     try {
       // EXISTING lessons: approve directly. Their header is not editable here,
       // and round-tripping it would send legacy tracks (e.g. "engine") into
@@ -282,11 +291,17 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
       if (!group.existing) {
         await adminEditLesson(group.lesson_id, headerPayload())
       }
-      await adminApproveLesson(group.lesson_id)
+      await adminApproveLesson(group.lesson_id, { force })
       onNotice(`✓ Το μάθημα «${group.title}» εγκρίθηκε — τα drafts του είναι πλέον live.`)
       reload()
     } catch (err) {
-      setNote(`Η έγκριση απέτυχε: ${err.message}`)
+      // The approve gate refuses (422) when items don't fit the skill_area —
+      // show exactly which, and let the admin override.
+      if (err.status === 422 && err.body && Array.isArray(err.body.mismatches)) {
+        setWarn(err.body)
+      } else {
+        setNote(`Η έγκριση απέτυχε: ${err.message}`)
+      }
       setBusy(null)
     }
   }
@@ -445,13 +460,40 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
 
       {note && <p className="admin-lesson__error">{note}</p>}
 
+      {warn && (
+        <div className="admin-lesson__warn" role="alert">
+          <p className="admin-lesson__warn-title">⚠ {warn.error}</p>
+          <ul className="admin-lesson__warn-list">
+            {warn.mismatches.map((m) => (
+              <li key={m.item_id}>
+                <code>{m.item_id}</code> — τύπος <strong>{m.kind}</strong> δεν επιτρέπεται στη
+                δεξιότητα «{warn.skill_area}»
+              </li>
+            ))}
+          </ul>
+          <div className="admin-lesson__warn-actions">
+            <button
+              type="button"
+              className="admin-btn admin-btn--approve"
+              onClick={() => approve(true)}
+              disabled={busy !== null}
+            >
+              {busy === 'approve' ? 'Έγκριση…' : 'Έγκριση παρ’ όλα αυτά'}
+            </button>
+            <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setWarn(null)}>
+              Άκυρο
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="admin-lesson__actions">
         {!group.existing && (
           <button type="button" className="admin-btn admin-btn--ghost" onClick={saveHeader} disabled={busy !== null}>
             {busy === 'save' ? 'Αποθήκευση…' : 'Αποθήκευση τίτλου'}
           </button>
         )}
-        <button type="button" className="admin-btn admin-btn--approve" onClick={approve} disabled={busy !== null}>
+        <button type="button" className="admin-btn admin-btn--approve" onClick={() => approve()} disabled={busy !== null}>
           {busy === 'approve' ? 'Έγκριση…' : '✓ Έγκριση μαθήματος'}
         </button>
         {!group.existing && (
@@ -484,7 +526,7 @@ function LessonGroup({ group, moveTargets, onError, onNotice, reload }) {
 // card, or enrich a thin lesson with the items it's missing. Every action
 // stores DRAFTS that show up in the review area below — nothing goes live
 // directly.
-function ExistingLessonsPanel({ lessons, reload }) {
+function ExistingLessonsPanel({ lessons, mismatches = {}, reload }) {
   // busy = `${lessonId}:${action}` while a per-row action runs.
   const [busy, setBusy] = useState(null)
   const [notes, setNotes] = useState({}) // lesson_id -> status message
@@ -685,6 +727,16 @@ function ExistingLessonsPanel({ lessons, reload }) {
               <span className="admin-card__id">
                 {lesson.item_count} {lesson.item_count === 1 ? 'item' : 'items'}
               </span>
+              {mismatches[lesson.lesson_id] && (
+                <span
+                  className="badge badge--warn"
+                  title={mismatches[lesson.lesson_id]
+                    .map((m) => `${m.item_id}: ${m.kind}`)
+                    .join('\n')}
+                >
+                  ⚠ {mismatches[lesson.lesson_id].length} εκτός δεξιότητας
+                </span>
+              )}
             </div>
             <select
               className="admin-input admin-input--compact"
@@ -948,6 +1000,7 @@ export default function Admin() {
   const [checking, setChecking] = useState(true)
   const [groups, setGroups] = useState([])
   const [approvedLessons, setApprovedLessons] = useState([])
+  const [mismatches, setMismatches] = useState({}) // lesson_id -> [bad items]
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null) // green success line (e.g. approvals)
 
@@ -958,10 +1011,11 @@ export default function Admin() {
   const [generating, setGenerating] = useState(false)
 
   function load(onAuthFail) {
-    return Promise.all([adminDraftLessons(), fetchLessons()])
-      .then(([review, lessons]) => {
+    return Promise.all([adminDraftLessons(), fetchLessons(), adminSkillMismatches()])
+      .then(([review, lessons, mismatchMap]) => {
         setGroups(review.lessons || [])
         setApprovedLessons(lessons || [])
+        setMismatches(mismatchMap || {})
         setChecking(false)
       })
       .catch((err) => {
@@ -1082,7 +1136,11 @@ export default function Admin() {
 
       <EmailScenariosPanel reload={() => load()} />
 
-      <ExistingLessonsPanel lessons={approvedLessons} reload={() => load()} />
+      <ExistingLessonsPanel
+        lessons={approvedLessons}
+        mismatches={mismatches}
+        reload={() => load()}
+      />
 
       <section className="admin-panel">
         <h2 className="admin-panel__title">Προτεινόμενα μαθήματα ({groups.length})</h2>

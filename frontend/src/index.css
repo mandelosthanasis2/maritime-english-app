@@ -2798,6 +2798,46 @@ h3 {
   padding: 0.5rem 0.7rem;
 }
 
+/* Skill-area mismatch warning (amber): item types that don't fit the lesson's
+   skill_area. Shown as an item/lesson badge and as the approve override box. */
+.badge--warn {
+  color: #1a1205;
+  background: var(--accent-2);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.admin-lesson__warn {
+  margin: 0.4rem 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 55%, transparent);
+  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+  border-radius: var(--r-sm);
+}
+.admin-lesson__warn-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent-2);
+}
+.admin-lesson__warn-list {
+  margin: 0 0 0.6rem;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+.admin-lesson__warn-list li {
+  margin: 0.15rem 0;
+}
+.admin-lesson__warn-list code {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+.admin-lesson__warn-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 /* Compact select for inline rows (e.g. category in the backfill list). */
 .admin-input--compact {
   width: auto;
