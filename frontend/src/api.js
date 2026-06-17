@@ -291,6 +291,20 @@ export function adminDedupLesson(lessonId) {
   })
 }
 
+export function adminCreateEmailScenario({ title, scenario, instructions }) {
+  return adminRequest('/api/admin/email-scenarios', {
+    method: 'POST',
+    body: { title, scenario, instructions },
+  })
+}
+
+export function adminGenerateEmailScenarios({ topic, count }) {
+  return adminRequest('/api/admin/email-scenarios/generate', {
+    method: 'POST',
+    body: { topic, count },
+  })
+}
+
 export function adminApproveLesson(lessonId) {
   return adminRequest(`/api/admin/lessons/${encodeURIComponent(lessonId)}/approve`, {
     method: 'POST',
