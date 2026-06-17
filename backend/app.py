@@ -1175,11 +1175,33 @@ SKILL_AREA_ITEM_TYPES = {
 }
 
 
+def _normalize_kind(skill_type, item_type):
+    """Editorial kind from a (skill_type, type) pair (dialogue->roleplay, etc.)."""
+    if skill_type:
+        return str(skill_type).lower()
+    return (_SKILL_TYPE_FROM_TYPE.get(item_type, item_type) or "").lower()
+
+
 def item_skill_kind(item):
-    """The item's editorial kind, normalized (dialogue->roleplay, etc.)."""
-    if item.skill_type:
-        return item.skill_type.lower()
-    return (_SKILL_TYPE_FROM_TYPE.get(item.type, item.type) or "").lower()
+    """The stored item's editorial kind, normalized."""
+    return _normalize_kind(item.skill_type, item.type)
+
+
+def raw_item_kind(raw):
+    """A generated item dict's editorial kind, normalized (pre-store)."""
+    return _normalize_kind(raw.get("skill_type"), raw.get("type"))
+
+
+def allowed_item_kinds(track, skill_area):
+    """The item kinds permitted for a lesson, or None when unrestricted.
+
+    Maritime track with a recognised skill_area is restricted to
+    SKILL_AREA_ITEM_TYPES; everything else (email track, or no/unknown
+    skill_area) returns None — keep the current behaviour, restrict nothing.
+    """
+    if track != "maritime":
+        return None
+    return SKILL_AREA_ITEM_TYPES.get(skill_area)
 
 
 def lesson_skill_mismatches(lesson, items):
@@ -1189,9 +1211,7 @@ def lesson_skill_mismatches(lesson, items):
     recognised skill_area are exempt and return []. Returns a list of
     (item, kind) tuples for the offending items.
     """
-    if lesson.track != "maritime":
-        return []
-    allowed = SKILL_AREA_ITEM_TYPES.get(lesson.skill_area)
+    allowed = allowed_item_kinds(lesson.track, lesson.skill_area)
     if not allowed:
         return []
     bad = []
@@ -1375,6 +1395,7 @@ def admin_generate_items():
 
     try:
         affected = []  # lessons we stored items into (unique, in order)
+        skipped_total = 0  # items dropped for not fitting the lesson's skill_area
         for entry in proposed:
             if entry["existing_lesson_id"]:
                 lesson = (
@@ -1409,9 +1430,26 @@ def admin_generate_items():
                 .filter(Item.lesson_id == lesson.lesson_id)
                 .scalar()
             )
-            for offset, raw in enumerate(entry["items"], start=1):
+            # Drop generated items whose type doesn't belong in this lesson's
+            # skill_area, using the SAME rule the approve validation enforces
+            # (maritime + known skill_area only; email/auto unrestricted). This
+            # stops e.g. a vocabulary lesson getting auto-added speaking/roleplay
+            # items that would only be rejected at approve.
+            allowed_kinds = allowed_item_kinds(lesson.track, lesson.skill_area)
+            order_index = base
+            for raw in entry["items"]:
+                if allowed_kinds is not None and raw_item_kind(raw) not in allowed_kinds:
+                    skipped_total += 1
+                    logger.info(
+                        "generate-items: skipped %r item — not allowed in skill_area %r (lesson %s)",
+                        raw_item_kind(raw),
+                        lesson.skill_area,
+                        lesson.lesson_id,
+                    )
+                    continue
+                order_index += 1
                 store_generated_item(
-                    session, raw, lesson.lesson_id, entry["track"], "B1", base + offset
+                    session, raw, lesson.lesson_id, entry["track"], "B1", order_index
                 )
             if lesson not in affected:
                 affected.append(lesson)
@@ -1441,7 +1479,17 @@ def admin_generate_items():
                 .all()
             )
             result.append((lesson, items))
-        return jsonify({"lessons": [serialize_admin_lesson(l, items) for l, items in result]})
+        if skipped_total:
+            logger.info(
+                "generate-items: dropped %d item(s) that didn't fit their lesson's skill_area",
+                skipped_total,
+            )
+        return jsonify(
+            {
+                "lessons": [serialize_admin_lesson(l, items) for l, items in result],
+                "skipped_off_skill": skipped_total,
+            }
+        )
     except IntegrityError as exc:
         session.rollback()
         logger.exception("Storing generated items failed (integrity error)")
