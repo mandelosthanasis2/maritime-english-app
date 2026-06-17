@@ -6,6 +6,7 @@ import Lesson from './pages/Lesson.jsx'
 import Login from './pages/Login.jsx'
 import Placement from './pages/Placement.jsx'
 import Practice from './pages/Practice.jsx'
+import LevelTest from './pages/LevelTest.jsx'
 import RoleSelect from './pages/RoleSelect.jsx'
 import SectionTest from './pages/SectionTest.jsx'
 import AccountMenu from './components/AccountMenu.jsx'
@@ -136,6 +137,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/lessons/:lessonId" element={<Lesson />} />
           <Route path="/test/:level/:skill" element={<SectionTest />} />
+          <Route path="/level-test/:level" element={<LevelTest />} />
           <Route path="/placement" element={<Placement />} />
           <Route path="/practice" element={<Practice />} />
           <Route path="/role" element={<RoleSelect />} />

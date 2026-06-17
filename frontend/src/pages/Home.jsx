@@ -475,6 +475,69 @@ function TestNode({ level, skill, state, score }) {
   )
 }
 
+// Whether a section counts as "mastered" — the SAME rule as part 3a: if the
+// section has a module test (≥4 auto-graded items) it's mastered once that test
+// is passed; otherwise (too few items, no test) it's mastered once every lesson
+// in it is passed. Drives the level test's unlock.
+function sectionMastered(lessons, passedSet, sectionTest) {
+  const gradableTotal = lessons.reduce((sum, l) => sum + (l.gradable_count || 0), 0)
+  const hasTest = gradableTotal >= TEST_MIN_ITEMS
+  if (hasTest) return !!sectionTest?.mastered
+  return lessons.every((l) => passedSet.has(l.lesson_id))
+}
+
+// The level-test node — the final milestone of a whole CEFR level, shown after
+// all its sections. State:
+//   locked    — not every section mastered: 🔒, not a link.
+//   available — every section mastered, level not yet completed: 🏆, highlighted.
+//   done      — level completed (level test ≥75%): ✓ + score (still re-takeable).
+function LevelTestNode({ level, state, score }) {
+  const marker = state === 'done' ? '✓' : state === 'locked' ? '🔒' : '🏆'
+  const markerState = state === 'available' ? 'level' : state
+  const stateClass =
+    state === 'done'
+      ? 'lesson-card--done'
+      : state === 'locked'
+        ? 'lesson-card--locked'
+        : 'lesson-card--current'
+  const sub =
+    state === 'locked'
+      ? '🔒 Ολοκλήρωσε όλες τις ενότητες του επιπέδου'
+      : state === 'done'
+        ? `✓ Ολοκληρώθηκε · Σκορ ${score}%`
+        : typeof score === 'number'
+          ? `Ξαναδοκίμασε · τελευταίο ${score}%`
+          : 'Το τελικό τεστ του επιπέδου'
+  const body = (
+    <>
+      <div className="lesson-card__top">
+        <span className="lesson-card__track">🏆 Level Test</span>
+      </div>
+      <h3 className="lesson-card__title">Τεστ επιπέδου {level}</h3>
+      <span className="lesson-card__count">{sub}</span>
+    </>
+  )
+  const cardClass = `lesson-card lesson-card--path lesson-card--leveltest ${stateClass}`
+  return (
+    <ol className="lesson-path lesson-path--level">
+      <li className={`lesson-path__node lesson-path__node--leveltest lesson-path__node--${state}`}>
+        <span className={`lesson-path__marker lesson-path__marker--${markerState}`} aria-hidden="true">
+          {marker}
+        </span>
+        {state === 'locked' ? (
+          <div className={cardClass} aria-disabled="true" title="Ολοκλήρωσε πρώτα όλες τις ενότητες">
+            {body}
+          </div>
+        ) : (
+          <Link to={`/level-test/${level}`} className={cardClass}>
+            {body}
+          </Link>
+        )}
+      </li>
+    </ol>
+  )
+}
+
 // One skill section as a sequential PATH with strict unlocking: the first lesson
 // is always open; each next opens only once the previous is passed (≥75%). When
 // the section has enough auto-graded items, a module-test node closes the path.
@@ -524,12 +587,21 @@ function SkillPath({ meta, level, lessons, passedSet, sectionTest }) {
 // One CEFR level block: a level header (marked when it's the user's placement
 // level) followed by the 4 skill paths that actually have lessons. The home
 // scrolls to the user's level on load via the forwarded ref.
-function LevelSection({ level, lessons, passedSet, sectionTests, isUserLevel, innerRef }) {
+function LevelSection({ level, lessons, passedSet, sectionTests, levelTest, isUserLevel, innerRef }) {
   const bySkill = SKILL_AREAS.map((meta) => ({
     meta,
     lessons: lessons.filter((l) => lessonSkill(l) === meta.key),
   })).filter((group) => group.lessons.length > 0)
   if (bySkill.length === 0) return null
+
+  // The level test exists only when the whole level has ≥4 auto-graded items
+  // (same threshold as a section), and unlocks once every section is mastered.
+  const levelGradable = lessons.reduce((sum, l) => sum + (l.gradable_count || 0), 0)
+  const hasLevelTest = levelGradable >= TEST_MIN_ITEMS
+  const allMastered = bySkill.every((group) =>
+    sectionMastered(group.lessons, passedSet, sectionTests.get(`${level}:${group.meta.key}`)),
+  )
+  const levelTestState = levelTest?.completed ? 'done' : allMastered ? 'available' : 'locked'
 
   return (
     <section
@@ -554,6 +626,9 @@ function LevelSection({ level, lessons, passedSet, sectionTests, isUserLevel, in
           sectionTest={sectionTests.get(`${level}:${meta.key}`)}
         />
       ))}
+      {hasLevelTest && (
+        <LevelTestNode level={level} state={levelTestState} score={levelTest?.best_score} />
+      )}
     </section>
   )
 }
@@ -562,7 +637,7 @@ function LevelSection({ level, lessons, passedSet, sectionTests, isUserLevel, in
 // sections. On first load it gently scrolls to the user's placement level so
 // they start where they belong — every level stays visible and browseable
 // (no locking yet; that's a later part).
-function MaritimePath({ lessons, passedSet, sectionTests, userLevel }) {
+function MaritimePath({ lessons, passedSet, sectionTests, levelTests, userLevel }) {
   const youRef = useRef(null)
   const didScroll = useRef(false)
 
@@ -594,6 +669,7 @@ function MaritimePath({ lessons, passedSet, sectionTests, userLevel }) {
           lessons={levelLessons}
           passedSet={passedSet}
           sectionTests={sectionTests}
+          levelTest={levelTests.get(level)}
           isUserLevel={level === userLevel}
           innerRef={level === userLevel ? youRef : undefined}
         />
@@ -657,6 +733,8 @@ function Home() {
   const sectionTests = new Map(
     (progress?.section_tests || []).map((t) => [`${t.cefr_level}:${t.skill_area}`, t]),
   )
+  // Level-test results keyed by CEFR level — drives the level-test milestone.
+  const levelTests = new Map((progress?.level_tests || []).map((t) => [t.cefr_level, t]))
 
   return (
     <div className="home">
@@ -728,6 +806,7 @@ function Home() {
                   lessons={maritimeLessons}
                   passedSet={passedSet}
                   sectionTests={sectionTests}
+                  levelTests={levelTests}
                   userLevel={userLessonLevel(progress?.cefr_level)}
                 />
               )}

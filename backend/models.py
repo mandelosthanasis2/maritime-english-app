@@ -187,3 +187,26 @@ class UserSectionTest(Base):
     best_score = Column(Integer)  # 0-100; highest module-test score achieved
     passed_at = Column(DateTime(timezone=True))  # first time best_score >= pass mark
 
+
+class UserLevelTest(Base):
+    """One row per (user, cefr_level) — the user's level-test result.
+
+    The level test spans ALL skill areas of a CEFR level (e.g. "A2"); it unlocks
+    once every section of that level is mastered. best_score is the highest
+    level-test score (0-100) achieved; the level is "completed" when best_score
+    >= the pass mark. passed_at records the first time that happened. Created
+    lazily on the first attempt; absent rows mean "not attempted yet".
+    """
+
+    __tablename__ = "user_level_tests"
+    __table_args__ = (
+        UniqueConstraint("user_id", "cefr_level", name="uq_user_level_test"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    cefr_level = Column(String, nullable=False)
+    best_score = Column(Integer)  # 0-100; highest level-test score achieved
+    passed_at = Column(DateTime(timezone=True))  # first time best_score >= pass mark
+
+

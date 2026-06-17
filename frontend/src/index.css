@@ -23,6 +23,7 @@
   /* Warm accents */
   --accent: #ff7a59; /* coral */
   --accent-2: #ffb020; /* amber */
+  --gold: #e8c66a; /* level-test milestone */
 
   /* Semantic (text colors brightened, backgrounds become tints) */
   --correct: #3ddc8f;
@@ -3771,6 +3772,38 @@ textarea {
 }
 .lesson-card--test.lesson-card--done {
   border-style: solid;
+}
+
+/* ---- Level-test node (final milestone of a whole CEFR level) ---- */
+.lesson-path--level {
+  margin-top: 4px;
+}
+/* Gold marker — a level milestone outranks the per-section test. */
+.lesson-path__marker--level {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 18%, var(--surface-2));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 18%, transparent);
+}
+/* The level-test card reads as the level's "boss": gold frame + faint sheen. */
+.lesson-card--leveltest {
+  border-style: solid;
+  border-width: 2px;
+}
+.lesson-card--leveltest.lesson-card--current {
+  border-color: var(--gold);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--gold) 14%, transparent),
+      transparent 60%
+    ),
+    var(--surface);
+}
+.lesson-card--leveltest .lesson-card__track {
+  color: var(--gold);
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 /* ============================================================
