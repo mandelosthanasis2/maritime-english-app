@@ -1813,6 +1813,114 @@ def admin_skill_mismatches():
         session.close()
 
 
+def _vocab_term(item):
+    """Extract (term, meaning_el, phonetic) from a vocabulary item, or None.
+
+    Vocabulary items hold the English word/phrase in english.text and its Greek
+    meaning in english.answer (mirrored in explanations.el.translation). Items
+    without an English term are skipped.
+    """
+    data = item.data or {}
+    english = data.get("english") or {}
+    term = (english.get("text") or "").strip()
+    if not term:
+        return None
+    meaning = (english.get("answer") or "").strip()
+    if not meaning:
+        el = (data.get("explanations") or {}).get("el") or {}
+        meaning = (el.get("translation") or "").strip()
+    return {
+        "term": term,
+        "meaning_el": meaning,
+        "phonetic": (english.get("phonetic") or "").strip(),
+    }
+
+
+@app.route("/api/admin/vocabulary-bank", methods=["GET"])
+def admin_vocabulary_bank():
+    """READ-ONLY: the vocabulary already taught in approved maritime lessons.
+
+    For the Hermes content agent — so it can avoid duplicating words and build
+    on existing terms. Scope: approved items of skill_type "vocabulary" inside
+    approved, maritime-track lessons (drafts and the email track are excluded).
+    Other item kinds (teaching titles, fill_gap/word_order sentences) are not
+    single terms and are left out.
+
+    Returns both views: per-lesson term lists, and a de-duplicated term list
+    (case-insensitive) with the lessons each term appears in.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        rows = (
+            session.query(Item, Lesson)
+            .join(Lesson, Item.lesson_id == Lesson.lesson_id)
+            .filter(
+                Item.status == "approved",
+                Lesson.status == "approved",
+                Lesson.track == "maritime",
+            )
+            .order_by(Lesson.cefr_level, Lesson.order_index, Item.order_index)
+            .all()
+        )
+
+        lessons = {}  # lesson_id -> lesson payload (insertion order preserved)
+        unique = {}  # term.lower() -> de-duplicated term payload
+        for item, lesson in rows:
+            if item_skill_kind(item) != "vocabulary":
+                continue
+            term = _vocab_term(item)
+            if term is None:
+                continue
+
+            entry = lessons.get(lesson.lesson_id)
+            if entry is None:
+                entry = {
+                    "lesson_id": lesson.lesson_id,
+                    "title": lesson.title,
+                    "cefr_level": lesson.cefr_level,
+                    "skill_area": lesson.skill_area,
+                    "terms": [],
+                }
+                lessons[lesson.lesson_id] = entry
+            entry["terms"].append(term)
+
+            key = term["term"].lower()
+            agg = unique.get(key)
+            if agg is None:
+                agg = {
+                    "term": term["term"],
+                    "meaning_el": term["meaning_el"],
+                    "phonetic": term["phonetic"],
+                    "occurrences": [],
+                }
+                unique[key] = agg
+            agg["occurrences"].append(
+                {
+                    "lesson_id": lesson.lesson_id,
+                    "title": lesson.title,
+                    "cefr_level": lesson.cefr_level,
+                    "skill_area": lesson.skill_area,
+                }
+            )
+
+        terms = sorted(unique.values(), key=lambda t: t["term"].lower())
+        return jsonify(
+            {
+                "lesson_count": len(lessons),
+                "term_count": len(terms),
+                "lessons": list(lessons.values()),
+                "terms": terms,
+            }
+        )
+    finally:
+        session.close()
+
+
 @app.route("/api/admin/auto-categorize", methods=["POST"])
 def admin_auto_categorize():
     """Classify unclassified approved lessons into engineer/deck/common.
