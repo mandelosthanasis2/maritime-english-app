@@ -3551,6 +3551,20 @@ textarea {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0.2rem 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.home-section__head:hover .home-section__title,
+.home-section__head:focus-visible .home-section__title {
+  color: var(--teal);
 }
 
 .home-section__icon {
@@ -3580,6 +3594,50 @@ textarea {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
+}
+
+/* Section progress (shown in the header even when the section is collapsed). */
+.home-section__progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.28rem;
+}
+.home-section__progress-bar {
+  position: relative;
+  width: 92px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.home-section__progress-fill {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: linear-gradient(90deg, var(--teal), var(--correct));
+  border-radius: inherit;
+  transition: width 0.3s ease;
+}
+.home-section__progress-text {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+/* Expand/collapse chevron — swaps ▸/▾ in markup, so no rotation needed. */
+.home-section__chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--ink-soft);
+}
+.home-section--open .home-section__chevron {
+  color: var(--teal);
 }
 
 .home-section__kicker {

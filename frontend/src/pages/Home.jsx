@@ -541,7 +541,10 @@ function LevelTestNode({ level, state, score }) {
 // One skill section as a sequential PATH with strict unlocking: the first lesson
 // is always open; each next opens only once the previous is passed (≥75%). When
 // the section has enough auto-graded items, a module-test node closes the path.
-function SkillPath({ meta, level, lessons, passedSet, sectionTest }) {
+// Collapsible: the header (icon + name + progress + chevron) is always visible;
+// the path itself renders only when `open`. Collapsing is purely visual — the
+// unlock/score/test logic is untouched.
+function SkillPath({ meta, level, lessons, passedSet, sectionTest, open, onToggle }) {
   const ordered = orderLessons(lessons)
   let prevPassed = true // the first lesson is always unlocked
   const nodes = ordered.map((lesson, i) => {
@@ -556,30 +559,53 @@ function SkillPath({ meta, level, lessons, passedSet, sectionTest }) {
   const allPassed = ordered.every((l) => passedSet.has(l.lesson_id))
   const testState = sectionTest?.mastered ? 'done' : allPassed ? 'available' : 'locked'
 
+  const passedCount = nodes.filter((n) => n.state === 'done').length
+  const total = nodes.length
+  const pct = total ? Math.round((passedCount / total) * 100) : 0
+  const bodyId = `section-${level}-${meta.key}`
+
   return (
-    <section className="home-section">
-      <header className="home-section__head">
+    <section className={`home-section${open ? ' home-section--open' : ''}`}>
+      <button
+        type="button"
+        className="home-section__head"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={bodyId}
+      >
         <span className={`home-section__icon home-section__icon--${meta.key}`} aria-hidden="true">
           {meta.icon}
         </span>
         <span className="home-section__heading">
           <h2 className="home-section__title">{meta.label}</h2>
+          <span className="home-section__progress">
+            <span className="home-section__progress-bar">
+              <span className="home-section__progress-fill" style={{ width: `${pct}%` }} />
+            </span>
+            <span className="home-section__progress-text">
+              {passedCount}/{total} ολοκληρωμένα
+            </span>
+          </span>
         </span>
-        <span className="home-section__count">{nodes.length}</span>
-      </header>
-      <ol className="lesson-path">
-        {nodes.map(({ lesson, state, step }) => (
-          <PathLessonCard key={lesson.lesson_id} lesson={lesson} state={state} step={step} />
-        ))}
-        {hasTest && (
-          <TestNode
-            level={level}
-            skill={meta.key}
-            state={testState}
-            score={sectionTest?.best_score}
-          />
-        )}
-      </ol>
+        <span className="home-section__chevron" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+      </button>
+      {open && (
+        <ol className="lesson-path" id={bodyId}>
+          {nodes.map(({ lesson, state, step }) => (
+            <PathLessonCard key={lesson.lesson_id} lesson={lesson} state={state} step={step} />
+          ))}
+          {hasTest && (
+            <TestNode
+              level={level}
+              skill={meta.key}
+              state={testState}
+              score={sectionTest?.best_score}
+            />
+          )}
+        </ol>
+      )}
     </section>
   )
 }
@@ -587,7 +613,17 @@ function SkillPath({ meta, level, lessons, passedSet, sectionTest }) {
 // One CEFR level block: a level header (marked when it's the user's placement
 // level) followed by the 4 skill paths that actually have lessons. The home
 // scrolls to the user's level on load via the forwarded ref.
-function LevelSection({ level, lessons, passedSet, sectionTests, levelTest, isUserLevel, innerRef }) {
+function LevelSection({
+  level,
+  lessons,
+  passedSet,
+  sectionTests,
+  levelTest,
+  openSet,
+  onToggleSection,
+  isUserLevel,
+  innerRef,
+}) {
   const bySkill = SKILL_AREAS.map((meta) => ({
     meta,
     lessons: lessons.filter((l) => lessonSkill(l) === meta.key),
@@ -616,16 +652,21 @@ function LevelSection({ level, lessons, passedSet, sectionTests, levelTest, isUs
         </span>
         {isUserLevel && <span className="home-level__you-badge">Το επίπεδό σου</span>}
       </header>
-      {bySkill.map(({ meta, lessons: skillLessons }) => (
-        <SkillPath
-          key={meta.key}
-          meta={meta}
-          level={level}
-          lessons={skillLessons}
-          passedSet={passedSet}
-          sectionTest={sectionTests.get(`${level}:${meta.key}`)}
-        />
-      ))}
+      {bySkill.map(({ meta, lessons: skillLessons }) => {
+        const key = `${level}:${meta.key}`
+        return (
+          <SkillPath
+            key={meta.key}
+            meta={meta}
+            level={level}
+            lessons={skillLessons}
+            passedSet={passedSet}
+            sectionTest={sectionTests.get(key)}
+            open={openSet.has(key)}
+            onToggle={() => onToggleSection(key)}
+          />
+        )
+      })}
       {hasLevelTest && (
         <LevelTestNode level={level} state={levelTestState} score={levelTest?.best_score} />
       )}
@@ -633,10 +674,35 @@ function LevelSection({ level, lessons, passedSet, sectionTests, levelTest, isUs
   )
 }
 
+// Which single section should be open by default: the one the user is actively
+// in. Prefer an unfinished section in the user's own level, then any unfinished
+// section, then the user's level, then the very first — so they always land on
+// something sensible without scrolling.
+function pickDefaultOpenSection(levels, passedSet, userLevel) {
+  const sections = []
+  for (const { level, lessons } of levels) {
+    for (const meta of SKILL_AREAS) {
+      const group = lessons.filter((l) => lessonSkill(l) === meta.key)
+      if (group.length === 0) continue
+      const allPassed = group.every((l) => passedSet.has(l.lesson_id))
+      sections.push({ key: `${level}:${meta.key}`, level, active: !allPassed })
+    }
+  }
+  if (sections.length === 0) return null
+  const inUser = (s) => s.level === userLevel
+  const pick =
+    sections.find((s) => inUser(s) && s.active) ||
+    sections.find((s) => s.active) ||
+    sections.find(inUser) ||
+    sections[0]
+  return pick.key
+}
+
 // The "Ναυτικά Αγγλικά" path: levels A2→C2 (ascending), each with its skill
 // sections. On first load it gently scrolls to the user's placement level so
 // they start where they belong — every level stays visible and browseable
-// (no locking yet; that's a later part).
+// (no locking yet; that's a later part). Each section is collapsible; only the
+// user's current section is open by default until they toggle others.
 function MaritimePath({ lessons, passedSet, sectionTests, levelTests, userLevel }) {
   const youRef = useRef(null)
   const didScroll = useRef(false)
@@ -645,6 +711,22 @@ function MaritimePath({ lessons, passedSet, sectionTests, levelTests, userLevel 
     level,
     lessons: lessons.filter((l) => lessonLevel(l) === level),
   })).filter((group) => group.lessons.length > 0)
+
+  // Default-open the current section, but let the user override (open/close any).
+  // openOverride is null until the first toggle, so the default tracks late-
+  // loading progress; after that the explicit set wins.
+  const defaultOpenKey = pickDefaultOpenSection(levels, passedSet, userLevel)
+  const [openOverride, setOpenOverride] = useState(null)
+  const baseOpen = () => new Set(defaultOpenKey ? [defaultOpenKey] : [])
+  const openSet = openOverride ?? baseOpen()
+  const toggleSection = (key) => {
+    setOpenOverride((prev) => {
+      const next = new Set(prev ?? baseOpen())
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   // Scroll to the user's level once, after it (and the lessons) have rendered.
   const hasUserLevel = levels.some((g) => g.level === userLevel)
@@ -670,6 +752,8 @@ function MaritimePath({ lessons, passedSet, sectionTests, levelTests, userLevel 
           passedSet={passedSet}
           sectionTests={sectionTests}
           levelTest={levelTests.get(level)}
+          openSet={openSet}
+          onToggleSection={toggleSection}
           isUserLevel={level === userLevel}
           innerRef={level === userLevel ? youRef : undefined}
         />
