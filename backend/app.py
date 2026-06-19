@@ -1160,13 +1160,34 @@ def next_lesson():
 
 # --- Admin: item generation & curation --------------------------------------
 
-# Source `type` <-> editorial `skill_type` for stored items.
+# Source `type` <-> editorial `skill_type` for stored items. A few kinds use a
+# different `type` token than their editorial `skill_type` (the model emits
+# both): a roleplay is type "dialogue", a translation is type "translation"
+# (skill_type "speaking"). Both tokens are normalised through this map so the
+# kind is recognised wherever it appears.
 _SKILL_TYPE_FROM_TYPE = {"dialogue": "roleplay", "translation": "speaking"}
 
-# Maritime-track only: which item kinds (skill_type) belong in each skill_area.
-# `teaching` is allowed everywhere — it's the intro/explanation. The email track
-# has its own structure and is exempt; lessons without a known skill_area are
-# left alone (nothing to validate against).
+# Every editorial kind the generator can emit, AFTER the type->skill_type
+# normalisation above. This is the closed vocabulary of kinds the rules below
+# know about — see the generator prompts in admin.py (item `type`/`skill_type`).
+# Anything outside this set is UNKNOWN and treated as a mismatch (fail-closed):
+# it is never silently allowed.
+KNOWN_ITEM_KINDS = {
+    "teaching",
+    "vocabulary",
+    "listening",
+    "fill_gap",
+    "word_order",
+    "speaking",
+    "roleplay",
+    "email_compose",
+}
+
+# Maritime-track only: which item kinds belong in each skill_area. `teaching` is
+# allowed everywhere — it's the intro/explanation. email_compose is email-only,
+# so it appears in no maritime skill_area and is rejected on the maritime path.
+# The email track has its own structure and is exempt entirely; lessons without
+# a recognised skill_area are left alone (nothing to validate against).
 SKILL_AREA_ITEM_TYPES = {
     "vocabulary": {"teaching", "vocabulary", "fill_gap"},
     "grammar": {"teaching", "fill_gap", "word_order"},
@@ -1175,21 +1196,57 @@ SKILL_AREA_ITEM_TYPES = {
 }
 
 
-def _normalize_kind(skill_type, item_type):
-    """Editorial kind from a (skill_type, type) pair (dialogue->roleplay, etc.)."""
-    if skill_type:
-        return str(skill_type).lower()
-    return (_SKILL_TYPE_FROM_TYPE.get(item_type, item_type) or "").lower()
+def _canon_kind(token):
+    """Lower-case a type/skill_type token and map type synonyms to their kind."""
+    if not token:
+        return None
+    k = str(token).strip().lower()
+    return _SKILL_TYPE_FROM_TYPE.get(k, k)
+
+
+def _declared_kinds(skill_type, item_type):
+    """All editorial kinds an item declares, from BOTH its skill_type and type.
+
+    Both are considered on purpose: a stored skill_type can be a lossy default
+    (store_generated_item falls back to "vocabulary" for an unrecognised type),
+    so the original `type` is often the only signal that an item is actually
+    off-skill. An empty set means the item declares no kind at all.
+    """
+    kinds = set()
+    for token in (skill_type, item_type):
+        canon = _canon_kind(token)
+        if canon:
+            kinds.add(canon)
+    return kinds
+
+
+def item_declared_kinds(item):
+    return _declared_kinds(item.skill_type, item.type)
+
+
+def raw_declared_kinds(raw):
+    return _declared_kinds(raw.get("skill_type"), raw.get("type"))
 
 
 def item_skill_kind(item):
-    """The stored item's editorial kind, normalized."""
-    return _normalize_kind(item.skill_type, item.type)
+    """The item's single primary kind (skill_type preferred), normalized."""
+    return _canon_kind(item.skill_type) or _canon_kind(item.type) or ""
 
 
-def raw_item_kind(raw):
-    """A generated item dict's editorial kind, normalized (pre-store)."""
-    return _normalize_kind(raw.get("skill_type"), raw.get("type"))
+def kinds_fit_skill(kinds, allowed):
+    """Whether every declared kind is allowed for the skill (fail-closed).
+
+    An unknown kind (not in KNOWN_ITEM_KINDS) is never in `allowed`, so it makes
+    this False. An item that declares no kind at all can't be judged and passes.
+    """
+    if not kinds:
+        return True
+    return all(k in allowed for k in kinds)
+
+
+def offending_kinds(kinds, allowed):
+    """The declared kinds that aren't allowed (for messaging)."""
+    return sorted(k for k in kinds if k not in allowed)
 
 
 def allowed_item_kinds(track, skill_area):
@@ -1205,20 +1262,22 @@ def allowed_item_kinds(track, skill_area):
 
 
 def lesson_skill_mismatches(lesson, items):
-    """Items whose kind doesn't fit the lesson's skill_area.
+    """Items whose type doesn't fit the lesson's skill_area (fail-closed).
 
     Maritime track only: email lessons (own structure) and lessons without a
-    recognised skill_area are exempt and return []. Returns a list of
-    (item, kind) tuples for the offending items.
+    recognised skill_area are exempt and return []. An item is a mismatch when
+    ANY kind it declares (skill_type OR type) is not allowed — including unknown
+    kinds. Returns (item, kind) tuples, kind being a representative offender.
     """
     allowed = allowed_item_kinds(lesson.track, lesson.skill_area)
     if not allowed:
         return []
     bad = []
     for item in items:
-        kind = item_skill_kind(item)
-        if kind and kind not in allowed:
-            bad.append((item, kind))
+        kinds = item_declared_kinds(item)
+        if not kinds_fit_skill(kinds, allowed):
+            offenders = offending_kinds(kinds, allowed) or ["unknown"]
+            bad.append((item, offenders[0]))
     return bad
 
 
@@ -1431,18 +1490,20 @@ def admin_generate_items():
                 .scalar()
             )
             # Drop generated items whose type doesn't belong in this lesson's
-            # skill_area, using the SAME rule the approve validation enforces
-            # (maritime + known skill_area only; email/auto unrestricted). This
-            # stops e.g. a vocabulary lesson getting auto-added speaking/roleplay
-            # items that would only be rejected at approve.
+            # skill_area, using the SAME fail-closed rule the approve validation
+            # enforces (maritime + known skill_area only; email/auto unrestricted)
+            # — including unknown types. This stops e.g. a vocabulary lesson
+            # getting auto-added speaking/roleplay items that would only be
+            # rejected at approve.
             allowed_kinds = allowed_item_kinds(lesson.track, lesson.skill_area)
             order_index = base
             for raw in entry["items"]:
-                if allowed_kinds is not None and raw_item_kind(raw) not in allowed_kinds:
+                kinds = raw_declared_kinds(raw)
+                if allowed_kinds is not None and not kinds_fit_skill(kinds, allowed_kinds):
                     skipped_total += 1
                     logger.info(
-                        "generate-items: skipped %r item — not allowed in skill_area %r (lesson %s)",
-                        raw_item_kind(raw),
+                        "generate-items: skipped %s item — not allowed in skill_area %r (lesson %s)",
+                        offending_kinds(kinds, allowed_kinds) or ["unknown"],
                         lesson.skill_area,
                         lesson.lesson_id,
                     )
