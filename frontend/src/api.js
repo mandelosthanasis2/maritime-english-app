@@ -335,6 +335,14 @@ export function adminListItems(status = 'draft') {
   return adminRequest(`/api/admin/items?status=${encodeURIComponent(status)}`)
 }
 
+// A single lesson's items (any status), ordered by order_index — for the
+// admin item-reorder UI.
+export function adminLessonItems(lessonId) {
+  return adminRequest(
+    `/api/admin/items?status=all&lesson_id=${encodeURIComponent(lessonId)}`,
+  )
+}
+
 export function adminDraftLessons() {
   return adminRequest('/api/admin/draft-lessons')
 }

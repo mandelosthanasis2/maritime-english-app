@@ -2804,6 +2804,97 @@ h3 {
   background: var(--surface);
 }
 
+/* ---- Item reorder (▲▼) inside a lesson ---- */
+.reorder {
+  flex-basis: 100%;
+  width: 100%;
+}
+.reorder__toggle {
+  font-size: 0.82rem;
+}
+.reorder__body {
+  margin-top: 0.5rem;
+}
+.reorder__pair {
+  margin-bottom: 0.5rem;
+  color: var(--teal);
+  border-color: var(--teal);
+}
+.reorder__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.reorder__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.reorder__row--teaching {
+  opacity: 0.7;
+}
+.reorder__kind {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 0.1rem 0.5rem;
+}
+.reorder__text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reorder__pin {
+  flex-shrink: 0;
+}
+.reorder__btns {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0.25rem;
+}
+.reorder__btn {
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.reorder__btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+@media (hover: hover) {
+  .reorder__btn:not(:disabled):hover {
+    color: var(--teal);
+    border-color: var(--teal);
+  }
+}
+
 .admin-teach-row__info {
   display: flex;
   align-items: center;
