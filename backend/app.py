@@ -2020,13 +2020,15 @@ def _lesson_teaches(lesson, items):
 
 @app.route("/api/admin/curriculum-overview", methods=["GET"])
 def admin_curriculum_overview():
-    """READ-ONLY: approved maritime lessons grouped by level and skill.
+    """READ-ONLY: approved maritime-path lessons grouped by level and skill.
 
     For the Hermes content agent — to plan new material without overlapping what
-    already exists ("A2 Grammar already has X, Y, Z"). Scope: approved,
-    maritime-track lessons (drafts and the email track excluded). Each lesson
-    lists what it teaches: vocabulary terms for vocabulary lessons, teaching-item
-    concept titles for grammar/listening/speaking (see _lesson_teaches).
+    already exists ("A2 Grammar already has X, Y, Z"). Scope: every approved,
+    non-email lesson — the same set the home shows on the "Ναυτικά Αγγλικά" path
+    (so grammar-track lessons are included, not just track == "maritime"). Each
+    lesson lists what it teaches: vocabulary terms for vocabulary lessons,
+    teaching-item concept titles for grammar/listening/speaking (see
+    _lesson_teaches).
 
     Shape: { lesson_count, levels: [ { cefr_level, skills: [ { skill_area,
     lesson_count, lessons: [ { lesson_id, title, cefr_level, skill_area,
@@ -2039,9 +2041,13 @@ def admin_curriculum_overview():
 
     session = SessionLocal()
     try:
+        # "Maritime path" = every approved, non-email lesson — the SAME criterion
+        # the home uses to show a lesson on the "Ναυτικά Αγγλικά" path
+        # (track !== "email"). NOT track == "maritime": grammar-skill lessons live
+        # on the separate "grammar" track and would be wrongly excluded otherwise.
         lessons = (
             session.query(Lesson)
-            .filter(Lesson.status == "approved", Lesson.track == "maritime")
+            .filter(Lesson.status == "approved", Lesson.track != "email")
             .all()
         )
         items_by_lesson = {}
@@ -2051,7 +2057,7 @@ def admin_curriculum_overview():
             .filter(
                 Item.status == "approved",
                 Lesson.status == "approved",
-                Lesson.track == "maritime",
+                Lesson.track != "email",
             )
             .order_by(Item.order_index)
             .all()
