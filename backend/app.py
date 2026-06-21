@@ -1689,13 +1689,25 @@ def admin_list_items():
     except AuthError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
+    # Optional filters. `lesson_id` returns a single lesson's items (any status)
+    # ordered by order_index — used by the admin item reorder UI. `status` filters
+    # by draft/approved; pass "all" (or empty) for every status.
     status = request.args.get("status", "draft")
+    lesson_id = request.args.get("lesson_id")
     session = SessionLocal()
     try:
         query = session.query(Item)
-        if status:
+        if lesson_id:
+            query = query.filter(Item.lesson_id == lesson_id)
+        if status and status != "all":
             query = query.filter(Item.status == status)
-        items = query.order_by(Item.id.desc()).all()
+        # For a single lesson, return display order (order_index); otherwise the
+        # legacy newest-first listing.
+        if lesson_id:
+            query = query.order_by(Item.order_index, Item.id)
+        else:
+            query = query.order_by(Item.id.desc())
+        items = query.all()
         return jsonify({"items": [serialize_admin_item(i) for i in items]})
     finally:
         session.close()
