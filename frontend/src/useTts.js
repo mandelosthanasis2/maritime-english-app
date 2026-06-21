@@ -24,7 +24,7 @@ export default function useTts() {
     setPlayingKey(null)
   }, [])
 
-  const play = useCallback(async (text, key) => {
+  const play = useCallback(async (text, key, opts = {}) => {
     const id = key ?? text
 
     if (audioRef.current) {
@@ -44,6 +44,14 @@ export default function useTts() {
     setLoadingKey((c) => (c === id ? null : c))
 
     const audio = new Audio(url)
+    // Optional slow playback (the listening "🐢 Αργά" help). Keep the pitch
+    // natural instead of the chipmunk effect a slower rate would otherwise give.
+    if (opts.rate && opts.rate !== 1) {
+      audio.playbackRate = opts.rate
+      audio.preservesPitch = true
+      audio.mozPreservesPitch = true
+      audio.webkitPreservesPitch = true
+    }
     audioRef.current = audio
     audio.addEventListener('ended', () => setPlayingKey((c) => (c === id ? null : c)))
     audio.addEventListener('error', () => setPlayingKey((c) => (c === id ? null : c)))

@@ -1511,6 +1511,57 @@ h3 {
   color: var(--amber);
 }
 
+/* ---- Listening item (listen-only, with slow / show-text help) ---- */
+.listen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  text-align: center;
+}
+.listen__prompt {
+  margin: 0;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+.listen__help {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+.listen__help-label {
+  width: 100%;
+  font-size: 0.78rem;
+  color: var(--ink-faint, var(--ink-soft));
+}
+.help-btn--listen {
+  font-size: 0.82rem;
+  padding: 0.4rem 0.8rem;
+}
+.listen__text {
+  width: 100%;
+  margin-top: 0.3rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.listen__text .item-card__english {
+  margin: 0;
+}
+.listen__el {
+  margin: 0.35rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+.listen__note {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+}
+
 /* Respect reduced-motion preferences */
 @media (prefers-reduced-motion: reduce) {
   *,
