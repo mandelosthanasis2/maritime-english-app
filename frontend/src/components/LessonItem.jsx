@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import PronunciationPractice from './PronunciationPractice.jsx'
 import RolePlay from './RolePlay.jsx'
 import useTts from '../useTts.js'
@@ -113,6 +113,95 @@ function DisplayItem({ english, el }) {
       <p className="item-card__english">{english.text}</p>
       <ListenButton text={english.text} />
       <Reveal el={el} />
+    </div>
+  )
+}
+
+// Listening exercise: the learner relies on their ears — the text is HIDDEN by
+// default. A normal-speed "🔊 Άκου" replay is free (re-listening is fair). Two
+// help actions for when they're stuck — "🐢 Αργά" (slow replay) and "👁 Κείμενο"
+// (reveal English + Greek) — each mark the item WRONG on the first attempt, the
+// same "reveal counts as wrong" rule the graded items use. The outcome is
+// reported once via onResult when leaving the item: correct unless help was used.
+function ListeningItem({ english, el, onResult }) {
+  const { play, playingKey, loadingKey } = useTts()
+  const [helpUsed, setHelpUsed] = useState(false)
+  const [showText, setShowText] = useState(false)
+  const reportedRef = useRef(false)
+  const helpUsedRef = useRef(false)
+  const onResultRef = useRef(onResult)
+  onResultRef.current = onResult
+
+  useEffect(
+    () => () => {
+      if (!reportedRef.current) {
+        reportedRef.current = true
+        onResultRef.current?.(!helpUsedRef.current)
+      }
+    },
+    [],
+  )
+
+  function requestHelp(kind) {
+    if (!helpUsedRef.current) {
+      helpUsedRef.current = true
+      setHelpUsed(true)
+    }
+    if (kind === 'slow') play(english.text, 'slow', { rate: 0.6 })
+    else setShowText(true)
+  }
+
+  const hasAudio = Boolean(english.text)
+
+  return (
+    <div className="li-display listen">
+      <p className="listen__prompt">🎧 Άκου και κατάλαβε</p>
+      {hasAudio ? (
+        <>
+          <button
+            type="button"
+            className={`pa-listen${playingKey === 'd' ? ' pa-listen--playing' : ''}`}
+            onClick={() => play(english.text, 'd')}
+          >
+            {loadingKey === 'd' ? '⏳' : '🔊'} Άκου
+          </button>
+
+          <div className="listen__help">
+            <span className="listen__help-label">Δυσκολεύεσαι;</span>
+            <button
+              type="button"
+              className="help-btn help-btn--listen"
+              onClick={() => requestHelp('slow')}
+            >
+              {loadingKey === 'slow' ? '⏳' : '🐢'} Αργά
+            </button>
+            <button
+              type="button"
+              className="help-btn help-btn--listen"
+              onClick={() => requestHelp('text')}
+              disabled={showText}
+            >
+              👁 Κείμενο
+            </button>
+          </div>
+
+          {showText && (
+            <div className="listen__text">
+              <p className="item-card__english">{english.text}</p>
+              {el.translation && <p className="listen__el">{el.translation}</p>}
+            </div>
+          )}
+
+          {helpUsed && (
+            <p className="feedback feedback--revealed listen__note">
+              ⚠ Χρησιμοποίησες βοήθεια — μετράει ως λάθος
+            </p>
+          )}
+        </>
+      ) : (
+        // Degenerate item with no audio text: nothing to listen to, show it.
+        <DisplayItem english={english} el={el} />
+      )}
     </div>
   )
 }
@@ -649,8 +738,12 @@ export default function LessonItem({ item, onAnswered, onResult }) {
             {english.text && <PronunciationPractice referenceText={english.text} />}
           </>
         )
+      case 'listening':
+        // Listen-only: text hidden by default, with slow/show-text help that
+        // marks the first attempt wrong via onResult.
+        return <ListeningItem english={english} el={el} onResult={onResult} />
       default:
-        // vocabulary, translation, listening, etc. — display + listen.
+        // vocabulary, translation, etc. — display + listen.
         return <DisplayItem english={english} el={el} />
     }
   }
