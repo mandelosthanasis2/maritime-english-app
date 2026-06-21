@@ -1982,6 +1982,120 @@ def admin_vocabulary_bank():
         session.close()
 
 
+# Canonical display order for the curriculum overview.
+_CEFR_ORDER = ("A2", "B1", "B2", "C1", "C2")
+_SKILL_ORDER = ("vocabulary", "grammar", "listening", "speaking")
+
+
+def _lesson_teaches(lesson, items):
+    """A short, scannable list of what a lesson teaches.
+
+    Vocabulary lessons → the English terms (reusing _vocab_term, same source as
+    the vocabulary bank). Other skills → the titles of the teaching items (the
+    concept each one introduces, e.g. "Present Simple"); when a lesson has no
+    teaching item we fall back to its own title so the entry is never empty.
+    """
+    if lesson.skill_area == "vocabulary":
+        out = []
+        for item in items:
+            if item_skill_kind(item) != "vocabulary":
+                continue
+            term = _vocab_term(item)
+            if term:
+                out.append(term["term"])
+        return out
+
+    concepts = []
+    for item in items:
+        if item_skill_kind(item) != "teaching":
+            continue
+        text = ((item.data or {}).get("english") or {}).get("text") or ""
+        text = text.strip()
+        if text:
+            concepts.append(text)
+    if concepts:
+        return concepts
+    return [lesson.title] if lesson.title else []
+
+
+@app.route("/api/admin/curriculum-overview", methods=["GET"])
+def admin_curriculum_overview():
+    """READ-ONLY: approved maritime lessons grouped by level and skill.
+
+    For the Hermes content agent — to plan new material without overlapping what
+    already exists ("A2 Grammar already has X, Y, Z"). Scope: approved,
+    maritime-track lessons (drafts and the email track excluded). Each lesson
+    lists what it teaches: vocabulary terms for vocabulary lessons, teaching-item
+    concept titles for grammar/listening/speaking (see _lesson_teaches).
+
+    Shape: { lesson_count, levels: [ { cefr_level, skills: [ { skill_area,
+    lesson_count, lessons: [ { lesson_id, title, cefr_level, skill_area,
+    order_index, teaches: [...] } ] } ] } ] }.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        lessons = (
+            session.query(Lesson)
+            .filter(Lesson.status == "approved", Lesson.track == "maritime")
+            .all()
+        )
+        items_by_lesson = {}
+        rows = (
+            session.query(Item)
+            .join(Lesson, Item.lesson_id == Lesson.lesson_id)
+            .filter(
+                Item.status == "approved",
+                Lesson.status == "approved",
+                Lesson.track == "maritime",
+            )
+            .order_by(Item.order_index)
+            .all()
+        )
+        for item in rows:
+            items_by_lesson.setdefault(item.lesson_id, []).append(item)
+
+        # level -> skill_area -> [lesson payloads]
+        grouped = {}
+        for lesson in lessons:
+            entry = {
+                "lesson_id": lesson.lesson_id,
+                "title": lesson.title,
+                "cefr_level": lesson.cefr_level,
+                "skill_area": lesson.skill_area,
+                "order_index": lesson.order_index,
+                "teaches": _lesson_teaches(lesson, items_by_lesson.get(lesson.lesson_id, [])),
+            }
+            grouped.setdefault(lesson.cefr_level, {}).setdefault(lesson.skill_area, []).append(entry)
+
+        def lesson_sort(l):
+            return (l["order_index"] if l["order_index"] is not None else 1_000_000, l["title"] or "")
+
+        def ordered_keys(keys, canonical):
+            present = [k for k in canonical if k in keys]
+            extras = sorted((k for k in keys if k not in canonical), key=lambda k: (k is None, k or ""))
+            return present + extras
+
+        levels_out = []
+        for level in ordered_keys(grouped.keys(), _CEFR_ORDER):
+            skills_map = grouped[level]
+            skills_out = []
+            for skill in ordered_keys(skills_map.keys(), _SKILL_ORDER):
+                ls = sorted(skills_map[skill], key=lesson_sort)
+                skills_out.append(
+                    {"skill_area": skill, "lesson_count": len(ls), "lessons": ls}
+                )
+            levels_out.append({"cefr_level": level, "skills": skills_out})
+
+        return jsonify({"lesson_count": len(lessons), "levels": levels_out})
+    finally:
+        session.close()
+
+
 @app.route("/api/admin/auto-categorize", methods=["POST"])
 def admin_auto_categorize():
     """Classify unclassified approved lessons into engineer/deck/common.
