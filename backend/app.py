@@ -1252,11 +1252,15 @@ def offending_kinds(kinds, allowed):
 def allowed_item_kinds(track, skill_area):
     """The item kinds permitted for a lesson, or None when unrestricted.
 
-    Maritime track with a recognised skill_area is restricted to
-    SKILL_AREA_ITEM_TYPES; everything else (email track, or no/unknown
-    skill_area) returns None — keep the current behaviour, restrict nothing.
+    The restriction is keyed on SKILL_AREA, not track: any non-email lesson with
+    a recognised skill_area (vocabulary/grammar/listening/speaking) is restricted
+    to SKILL_AREA_ITEM_TYPES — whatever its track. (Grammar-skill lessons live on
+    a separate "grammar" track, and listening/speaking may get their own; keying
+    on track would let them all skip the type check.) The email track keeps its
+    own structure, and a lesson with no/unknown skill_area is unrestricted —
+    both return None.
     """
-    if track != "maritime":
+    if track == "email":
         return None
     return SKILL_AREA_ITEM_TYPES.get(skill_area)
 
@@ -1841,12 +1845,14 @@ def admin_draft_lessons():
 
 @app.route("/api/admin/skill-mismatches", methods=["GET"])
 def admin_skill_mismatches():
-    """Per-lesson item-type mismatches across ALL maritime lessons.
+    """Per-lesson item-type mismatches across ALL non-email lessons.
 
     Returns {lesson_id: [{item_id, type, skill_type, kind}, ...]} for every
-    maritime lesson (draft or approved) that contains an item not allowed in its
-    skill_area. Drives the read-only warning indicator in the admin — existing
-    offenders are surfaced, never modified. Clean lessons are omitted.
+    non-email lesson (draft or approved) that contains an item not allowed in its
+    skill_area — keyed on skill_area, so grammar/listening/speaking lessons on
+    their own tracks are checked too, not just track == "maritime". Drives the
+    read-only warning indicator in the admin — existing offenders are surfaced,
+    never modified. Clean lessons are omitted.
     """
     try:
         verify_admin(request)
@@ -1855,7 +1861,7 @@ def admin_skill_mismatches():
 
     session = SessionLocal()
     try:
-        lessons = session.query(Lesson).filter(Lesson.track == "maritime").all()
+        lessons = session.query(Lesson).filter(Lesson.track != "email").all()
         result = {}
         for lesson in lessons:
             bad = lesson_skill_mismatches(lesson, lesson.items)
