@@ -1191,7 +1191,9 @@ KNOWN_ITEM_KINDS = {
 SKILL_AREA_ITEM_TYPES = {
     "vocabulary": {"teaching", "vocabulary", "fill_gap"},
     "grammar": {"teaching", "fill_gap", "word_order"},
-    "listening": {"teaching", "listening", "fill_gap"},
+    # listening items are self-contained (sentence + blanks since #78), so a
+    # separate fill_gap would be a soundless leftover — only teaching + listening.
+    "listening": {"teaching", "listening"},
     "speaking": {"teaching", "speaking", "roleplay"},
 }
 
@@ -2329,7 +2331,7 @@ def admin_enrich_lesson(lesson_id):
         if not items:
             return jsonify({"error": "Το μάθημα δεν έχει approved items ακόμη."}), 400
 
-        gaps = analyze_lesson_gaps(items)
+        gaps = analyze_lesson_gaps(items, lesson.skill_area)
         if not gaps["needed"]:
             # Already complete — friendly 200 (not an error) so the UI can say so.
             return jsonify(

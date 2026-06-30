@@ -98,7 +98,7 @@ DECIDING THE SKILL AREA (skill_area)
 Each lesson trains ONE primary skill: "vocabulary" | "grammar" | "listening" | "speaking".
 - "grammar": the lesson's point is an English grammar rule/structure (ALL track "grammar" lessons are "grammar").
 - "vocabulary": the lesson's point is learning words/terms/phrases and their meaning (most maritime terminology lessons).
-- "listening": the lesson is built around understanding spoken English (listening items dominate).
+- "listening": the lesson is built around understanding spoken English (listening items dominate). A LISTENING lesson must contain ONLY "teaching" + "listening" items — NO separate fill_gap (each listening item already contains its own sentence + blanks). Its ONE teaching item gives short USAGE INSTRUCTIONS for the exercise (e.g. "Άκουσε την πρόταση, διάλεξε τις λέξεις που λείπουν· πάτα 🐢 για αργή επανάληψη ή 👁 για τη μετάφραση αν δυσκολευτείς."), NOT a vocabulary/grammar mini-lesson — the learner already knows the words.
 - "speaking": the lesson is built around producing speech — pronunciation, saying phrases aloud, roleplay dialogues dominate.
 Pick the skill the lesson MOSTLY trains, even though a lesson mixes item types. (Do NOT set skill_area for "email" lessons — omit it.)
 
@@ -865,17 +865,32 @@ def _item_skill(item):
     return (item.skill_type or item.type or "").lower()
 
 
-def analyze_lesson_gaps(items):
+def analyze_lesson_gaps(items, skill_area=None):
     """Decide which items an existing lesson needs to reach the standard.
 
     Returns {count, have_speaking, have_roleplay, needed} where `needed` is an
     ordered list of skill_types to generate (may be empty when the lesson is
     already complete).
+
+    A LISTENING lesson holds only teaching + listening items (the listening item
+    is self-contained since #78), so it is filled with listening items only — no
+    speaking/roleplay/fill_gap. Other skill areas keep the existing behaviour.
     """
     count = len(items)
     skills = [_item_skill(i) for i in items]
     have_speaking = "speaking" in skills
     have_roleplay = "roleplay" in skills
+
+    if skill_area == "listening":
+        needed = []
+        while count + len(needed) < ENRICH_TARGET_MIN and count + len(needed) < ENRICH_TARGET_MAX:
+            needed.append("listening")
+        return {
+            "count": count,
+            "have_speaking": have_speaking,
+            "have_roleplay": have_roleplay,
+            "needed": needed,
+        }
 
     needed = []
     if not have_speaking:
