@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import PronunciationPractice from './PronunciationPractice.jsx'
 import RolePlay from './RolePlay.jsx'
 import useTts from '../useTts.js'
@@ -53,6 +53,12 @@ export function isGatedType(item) {
   if (type === 'fill_gap' || type === 'word_order') return true
   if (type === 'email_compose') return true // must submit to get feedback
   if (type === 'vocabulary' && typeof item !== 'string') return isVocabExercise(item)
+  // Interactive listening (cloze with blanks) must be answered; the older
+  // listen-only listening form has no blanks and stays non-gated.
+  if (type === 'listening' && typeof item !== 'string') {
+    const eng = item?.data?.english || {}
+    return listeningBlanks(eng).length >= 1 && Boolean(eng.gap_text) && Boolean(eng.text)
+  }
   return false
 }
 
@@ -117,13 +123,189 @@ function DisplayItem({ english, el }) {
   )
 }
 
-// Listening exercise: the learner relies on their ears — the text is HIDDEN by
-// default. A normal-speed "🔊 Άκου" replay is free (re-listening is fair). Two
-// help actions for when they're stuck — "🐢 Αργά" (slow replay) and "👁 Κείμενο"
-// (reveal English + Greek) — each mark the item WRONG on the first attempt, the
-// same "reveal counts as wrong" rule the graded items use. The outcome is
-// reported once via onResult when leaving the item: correct unless help was used.
-function ListeningItem({ english, el, onResult }) {
+// The two (or more) gaps of an interactive listening item, validated. Empty
+// when the item is the older listen-only form (#75) — see ListeningItem.
+function listeningBlanks(english) {
+  const blanks = Array.isArray(english.blanks) ? english.blanks : []
+  return blanks.filter(
+    (b) => b && b.answer && Array.isArray(b.options) && b.options.length >= 2,
+  )
+}
+
+// Listening item. Two shapes share the type "listening":
+//   • interactive "cloze" (the new form): a played sentence with 2 blanks to
+//     fill from options — ListeningCloze.
+//   • listen-only (the #75 form, kept as a fallback for items without blanks):
+//     hear the sentence, optional slow / show-text help — ListenOnly.
+function ListeningItem({ english, el, onAnswered, onResult }) {
+  const blanks = listeningBlanks(english)
+  if (blanks.length >= 1 && english.gap_text && english.text) {
+    return (
+      <ListeningCloze
+        english={english}
+        el={el}
+        blanks={blanks}
+        onAnswered={onAnswered}
+        onResult={onResult}
+      />
+    )
+  }
+  return <ListenOnly english={english} el={el} onResult={onResult} />
+}
+
+// Interactive listening: 🔊 plays the full sentence; the sentence is shown with
+// blanks the learner fills from options (3 each). Help — 🐢 slow replay, 👁 Greek
+// translation — counts the item WRONG, same rule as #75. Scoring is all-or-
+// nothing: every blank right on its FIRST pick AND no help → correct; reported
+// once via onResult. Gated: onAnswered fires only when every blank is solved.
+function ListeningCloze({ english, el, blanks, onAnswered, onResult }) {
+  const { play, playingKey, loadingKey } = useTts()
+  // Shuffle each blank's options once per mount (player remounts each item).
+  const [optionSets] = useState(() => blanks.map((b) => shuffle(b.options)))
+  const [solved, setSolved] = useState(() => blanks.map(() => false))
+  const [chosen, setChosen] = useState(() => blanks.map(() => null))
+  const [wrongPick, setWrongPick] = useState(() => blanks.map(() => null))
+  const [helpUsed, setHelpUsed] = useState(false)
+  const [showTranslation, setShowTranslation] = useState(false)
+
+  // First-pick correctness per blank (null until first tap); reported once.
+  const firstPick = useRef(blanks.map(() => null))
+  const reportedRef = useRef(false)
+  const helpRef = useRef(false)
+  const onResultRef = useRef(onResult)
+  onResultRef.current = onResult
+
+  function reportOnce(value) {
+    if (reportedRef.current) return
+    reportedRef.current = true
+    onResultRef.current?.(value)
+  }
+
+  function choose(bi, option) {
+    if (solved[bi]) return
+    const isCorrect = normalize(option) === normalize(blanks[bi].answer)
+    if (firstPick.current[bi] === null) firstPick.current[bi] = isCorrect
+    if (isCorrect) {
+      const nextSolved = solved.map((v, i) => (i === bi ? true : v))
+      setSolved(nextSolved)
+      setChosen((prev) => prev.map((v, i) => (i === bi ? option : v)))
+      setWrongPick((prev) => prev.map((v, i) => (i === bi ? null : v)))
+      if (nextSolved.every(Boolean)) {
+        onAnswered?.()
+        // All correct on first pick AND no help → correct, else wrong.
+        reportOnce(firstPick.current.every((v) => v === true) && !helpRef.current)
+      }
+    } else {
+      setWrongPick((prev) => prev.map((v, i) => (i === bi ? option : v)))
+    }
+  }
+
+  function useHelp(kind) {
+    if (!helpRef.current) {
+      helpRef.current = true
+      setHelpUsed(true)
+      reportOnce(false) // any help = wrong (locked in immediately)
+    }
+    if (kind === 'slow') play(english.text, 'slow', { rate: 0.6 })
+    else setShowTranslation(true)
+  }
+
+  const allSolved = solved.every(Boolean)
+  const passed = allSolved && firstPick.current.every((v) => v === true) && !helpUsed
+
+  // Render the sentence with inline blanks (split gap_text on "___"). Fall back
+  // to plain gap_text if the blank count doesn't line up.
+  const parts = (english.gap_text || '').split('___')
+  const inline = parts.length === blanks.length + 1
+
+  return (
+    <div className="li-display listen cloze">
+      <p className="listen__prompt">🎧 Άκου και συμπλήρωσε</p>
+      <button
+        type="button"
+        className={`pa-listen${playingKey === 'd' ? ' pa-listen--playing' : ''}`}
+        onClick={() => play(english.text, 'd')}
+      >
+        {loadingKey === 'd' ? '⏳' : '🔊'} Άκου
+      </button>
+
+      <p className="cloze__sentence">
+        {inline
+          ? parts.map((part, i) => (
+              <Fragment key={i}>
+                <span>{part}</span>
+                {i < blanks.length && (
+                  <span className={`cloze__slot${solved[i] ? ' cloze__slot--filled' : ''}`}>
+                    {solved[i] ? chosen[i] : '____'}
+                  </span>
+                )}
+              </Fragment>
+            ))
+          : english.gap_text}
+      </p>
+
+      {blanks.map((blank, bi) => (
+        <div key={bi} className="cloze__group">
+          {blanks.length > 1 && <span className="cloze__label">Κενό {bi + 1}</span>}
+          <div className="options">
+            {optionSets[bi].map((option) => {
+              let cls = 'option'
+              if (solved[bi] && chosen[bi] === option) cls += ' option--correct'
+              else if (!solved[bi] && wrongPick[bi] === option) cls += ' option--wrong'
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  className={cls}
+                  onClick={() => choose(bi, option)}
+                  disabled={solved[bi]}
+                >
+                  {option}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div className="listen__help">
+        <span className="listen__help-label">Δυσκολεύεσαι;</span>
+        <button type="button" className="help-btn help-btn--listen" onClick={() => useHelp('slow')}>
+          {loadingKey === 'slow' ? '⏳' : '🐢'} Αργά
+        </button>
+        <button
+          type="button"
+          className="help-btn help-btn--listen"
+          onClick={() => useHelp('text')}
+          disabled={showTranslation}
+        >
+          👁 Μετάφραση
+        </button>
+      </div>
+
+      {showTranslation && el.translation && <p className="listen__el">{el.translation}</p>}
+
+      {helpUsed && !allSolved && (
+        <p className="feedback feedback--revealed listen__note">
+          ⚠ Χρησιμοποίησες βοήθεια — μετράει ως λάθος
+        </p>
+      )}
+
+      {allSolved && (
+        <div className="cloze__done">
+          <p className="item-card__english">{english.text}</p>
+          <p className={`feedback ${passed ? 'feedback--correct' : 'feedback--revealed'}`}>
+            {passed ? '✓ Σωστά' : 'Η σωστή πρόταση 👆'}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Listen-only fallback (#75): text hidden, free normal replay, slow/show-text
+// help that marks the item wrong via onResult when leaving it.
+function ListenOnly({ english, el, onResult }) {
   const { play, playingKey, loadingKey } = useTts()
   const [helpUsed, setHelpUsed] = useState(false)
   const [showText, setShowText] = useState(false)
@@ -739,9 +921,10 @@ export default function LessonItem({ item, onAnswered, onResult }) {
           </>
         )
       case 'listening':
-        // Listen-only: text hidden by default, with slow/show-text help that
-        // marks the first attempt wrong via onResult.
-        return <ListeningItem english={english} el={el} onResult={onResult} />
+        // Interactive cloze (sentence + blanks) when present, else listen-only.
+        return (
+          <ListeningItem english={english} el={el} onAnswered={onAnswered} onResult={onResult} />
+        )
       default:
         // vocabulary, translation, etc. — display + listen.
         return <DisplayItem english={english} el={el} />
