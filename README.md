@@ -34,6 +34,13 @@ gunicorn app:app                # or: python app.py
 3. Railway detects `requirements.txt` and uses the `Procfile`
    (`web: gunicorn app:app`) to start the service.
 
+**Environment variables:** see [`backend/.env.example`](backend/.env.example)
+for the full list. AI lesson-content generation is provider-configurable via
+`AI_PROVIDER` (`deepseek` default, `claude` fallback) — set `AI_PROVIDER=claude`
+to keep the previous Claude-only behaviour. Roleplay and email feedback always
+use Claude. If `DEEPSEEK_API_KEY` is missing, generation silently falls back to
+Claude.
+
 ### `frontend/`
 
 A default Vite + React (JavaScript) app showing a placeholder page.
