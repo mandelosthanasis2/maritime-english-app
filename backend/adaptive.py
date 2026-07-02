@@ -1,3 +1,6 @@
+# Το αρχείο αυτό περιέχει τον adaptive engine που επιλέγει την επόμενη άσκηση ή μάθημα.
+# Χρησιμοποιείται από τα routes του Practice και του Lesson για να προτείνει
+# περιεχόμενο προσαρμοσμένο στην πρόοδο, το επίπεδο και τις ανάγκες του χρήστη.
 """Adaptive exercise selection — a simple, transparent BirdBrain-style scorer.
 
 Given the user's placement results (cefr_level, maritime_level) and their
