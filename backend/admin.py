@@ -14,12 +14,11 @@ import io
 import json
 import logging
 import math
-import os
 import re
 
-logger = logging.getLogger(__name__)
+import ai_text
 
-MODEL = "claude-opus-4-8"
+logger = logging.getLogger(__name__)
 
 ALLOWED_DIFFICULTY = {"A1", "A2", "B1", "B2", "C1"}
 ALLOWED_SKILL_TYPES = {
@@ -468,23 +467,21 @@ def _chunk_user_prompt(chunk, kind, known_titles):
     )
 
 
-def _generate_chunk_lessons(client, anthropic, chunk, kind, known_titles):
+def _generate_chunk_lessons(chunk, kind, known_titles):
     try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=20000,
+        text = ai_text.generate_text(
             system=SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": _chunk_user_prompt(chunk, kind, known_titles)}
             ],
-            output_config={"effort": "medium"},
+            max_tokens=20000,
+            effort="medium",
             timeout=GENERATION_TIMEOUT_SECONDS,
         )
-    except anthropic.APIError as exc:
-        logger.warning("Anthropic call failed for a chunk: %s", exc)
+    except ai_text.AITextError as exc:
+        logger.warning("AI text call failed for a chunk: %s", exc)
         raise AdminGenError("The generator is unavailable right now.", 502) from exc
 
-    text = "".join(b.text for b in response.content if b.type == "text")
     return _parse_json_array(text)
 
 
@@ -507,21 +504,15 @@ def generate_lessons(source_text, kind, existing_lessons=None):
     if not text:
         raise AdminGenError("Χρειάζεται κείμενο ή PDF.", 400)
 
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        logger.error("ANTHROPIC_API_KEY is not set; generation unavailable.")
-        raise AdminGenError("Item generation is not configured on the server.", 503)
-
     try:
-        import anthropic
-    except ImportError as exc:  # pragma: no cover - dependency missing
-        logger.exception("anthropic SDK failed to import.")
-        raise AdminGenError("Item generation is not available on the server.", 503) from exc
+        ai_text.require_configured()
+    except ai_text.AITextNotConfigured as exc:
+        logger.error("No AI text provider configured; generation unavailable.")
+        raise AdminGenError("Item generation is not configured on the server.", 503) from exc
 
     existing_lessons = existing_lessons or []
     existing_by_norm = {_norm(l["title"]): l for l in existing_lessons if l.get("title")}
 
-    client = anthropic.Anthropic()
     chunks = chunk_text(text)
     logger.info("Generating lessons from %d chunk(s), kind=%s", len(chunks), kind)
 
@@ -534,7 +525,7 @@ def generate_lessons(source_text, kind, existing_lessons=None):
             l["title"] for l in existing_lessons if l.get("title")
         ]
         try:
-            lessons = _generate_chunk_lessons(client, anthropic, chunk, kind, known_titles)
+            lessons = _generate_chunk_lessons(chunk, kind, known_titles)
         except AdminGenError as exc:
             failures += 1
             logger.warning("Chunk %d/%d failed: %s", i + 1, len(chunks), exc)
@@ -655,35 +646,28 @@ def auto_categorize_lessons(lessons_payload):
     Entries the model skips or answers invalidly are simply absent from the
     result (the caller leaves those lessons unchanged).
     """
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        logger.error("ANTHROPIC_API_KEY is not set; categorization unavailable.")
-        raise AdminGenError("Item generation is not configured on the server.", 503)
     try:
-        import anthropic
-    except ImportError as exc:  # pragma: no cover - dependency missing
-        logger.exception("anthropic SDK failed to import.")
-        raise AdminGenError("Item generation is not available on the server.", 503) from exc
+        ai_text.require_configured()
+    except ai_text.AITextNotConfigured as exc:
+        logger.error("No AI text provider configured; categorization unavailable.")
+        raise AdminGenError("Item generation is not configured on the server.", 503) from exc
 
-    client = anthropic.Anthropic()
     result = {}
     for start in range(0, len(lessons_payload), CATEGORIZE_BATCH_SIZE):
         batch = lessons_payload[start : start + CATEGORIZE_BATCH_SIZE]
         try:
-            response = client.messages.create(
-                model=MODEL,
-                max_tokens=2000,
+            text = ai_text.generate_text(
                 system=AUTO_CATEGORIZE_SYSTEM_PROMPT,
                 messages=[
                     {"role": "user", "content": json.dumps(batch, ensure_ascii=False)}
                 ],
-                output_config={"effort": "medium"},
+                max_tokens=2000,
+                effort="medium",
             )
-        except anthropic.APIError as exc:
-            logger.warning("Anthropic call failed for a categorize batch: %s", exc)
+        except ai_text.AITextError as exc:
+            logger.warning("AI text call failed for a categorize batch: %s", exc)
             continue  # other batches may still succeed
 
-        text = "".join(b.text for b in response.content if b.type == "text")
         try:
             rows = _parse_json_array(text)
         except AdminGenError:
@@ -758,16 +742,6 @@ def lesson_digest(items, max_items=DIGEST_MAX_ITEMS):
 
 def generate_teaching_for_lesson(title, track, digest):
     """Ask Claude for 1-2 teaching items for an existing lesson; returns raw dicts."""
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        logger.error("ANTHROPIC_API_KEY is not set; generation unavailable.")
-        raise AdminGenError("Item generation is not configured on the server.", 503)
-    try:
-        import anthropic
-    except ImportError as exc:  # pragma: no cover - dependency missing
-        logger.exception("anthropic SDK failed to import.")
-        raise AdminGenError("Item generation is not available on the server.", 503) from exc
-
     user_prompt = (
         f'LESSON TITLE: "{title}"\n'
         f"TRACK: {track}\n\n"
@@ -775,20 +749,20 @@ def generate_teaching_for_lesson(title, track, digest):
         f"{digest}\n\n"
         "Produce the 1-2 teaching items as a JSON array."
     )
-    client = anthropic.Anthropic()
     try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=4000,
+        text = ai_text.generate_text(
             system=TEACHING_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
-            output_config={"effort": "medium"},
+            max_tokens=4000,
+            effort="medium",
         )
-    except anthropic.APIError as exc:
-        logger.warning("Anthropic call failed for teaching backfill: %s", exc)
+    except ai_text.AITextNotConfigured as exc:
+        logger.error("No AI text provider configured; generation unavailable.")
+        raise AdminGenError("Item generation is not configured on the server.", 503) from exc
+    except ai_text.AITextError as exc:
+        logger.warning("AI text call failed for teaching backfill: %s", exc)
         raise AdminGenError("The generator is unavailable right now.", 502) from exc
 
-    text = "".join(b.text for b in response.content if b.type == "text")
     raws = _parse_json_array(text)
 
     teaching = []
@@ -915,16 +889,6 @@ def analyze_lesson_gaps(items, skill_area=None):
 
 def generate_enrichment_items(title, track, role_category, digest, needed):
     """Ask Claude for exactly the `needed` items for an existing lesson."""
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        logger.error("ANTHROPIC_API_KEY is not set; generation unavailable.")
-        raise AdminGenError("Item generation is not configured on the server.", 503)
-    try:
-        import anthropic
-    except ImportError as exc:  # pragma: no cover - dependency missing
-        logger.exception("anthropic SDK failed to import.")
-        raise AdminGenError("Item generation is not available on the server.", 503) from exc
-
     # A readable, numbered shopping list of what to produce, in order.
     lines = "\n".join(f"{i + 1}. skill_type = {s}" for i, s in enumerate(needed))
     user_prompt = (
@@ -935,21 +899,21 @@ def generate_enrichment_items(title, track, role_category, digest, needed):
         f"PRODUCE EXACTLY THESE {len(needed)} NEW ITEMS, IN THIS ORDER:\n{lines}\n\n"
         "Return ONLY the JSON array."
     )
-    client = anthropic.Anthropic()
     try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=12000,
+        text = ai_text.generate_text(
             system=ENRICH_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
-            output_config={"effort": "medium"},
+            max_tokens=12000,
+            effort="medium",
             timeout=GENERATION_TIMEOUT_SECONDS,
         )
-    except anthropic.APIError as exc:
-        logger.warning("Anthropic call failed for enrichment: %s", exc)
+    except ai_text.AITextNotConfigured as exc:
+        logger.error("No AI text provider configured; generation unavailable.")
+        raise AdminGenError("Item generation is not configured on the server.", 503) from exc
+    except ai_text.AITextError as exc:
+        logger.warning("AI text call failed for enrichment: %s", exc)
         raise AdminGenError("The generator is unavailable right now.", 502) from exc
 
-    text = "".join(b.text for b in response.content if b.type == "text")
     raws = _parse_json_array(text)
 
     items = []
@@ -1006,34 +970,24 @@ def generate_email_scenarios(topic, count):
         count = 5
     count = max(1, min(MAX_EMAIL_SCENARIOS, count))
 
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        logger.error("ANTHROPIC_API_KEY is not set; scenario generation unavailable.")
-        raise AdminGenError("Item generation is not configured on the server.", 503)
-    try:
-        import anthropic
-    except ImportError as exc:  # pragma: no cover - dependency missing
-        logger.exception("anthropic SDK failed to import.")
-        raise AdminGenError("Item generation is not available on the server.", 503) from exc
-
     topic = (topic or "").strip() or "γενικά επαγγελματικά email προς την εταιρεία"
     user_prompt = (
         f"TOPIC: {topic}\nCOUNT: {count}\n\nProduce {count} distinct scenarios as a JSON array."
     )
-    client = anthropic.Anthropic()
     try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=4000,
+        text = ai_text.generate_text(
             system=EMAIL_SCENARIO_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
-            output_config={"effort": "medium"},
+            max_tokens=4000,
+            effort="medium",
         )
-    except anthropic.APIError as exc:
-        logger.warning("Anthropic call failed for email scenarios: %s", exc)
+    except ai_text.AITextNotConfigured as exc:
+        logger.error("No AI text provider configured; scenario generation unavailable.")
+        raise AdminGenError("Item generation is not configured on the server.", 503) from exc
+    except ai_text.AITextError as exc:
+        logger.warning("AI text call failed for email scenarios: %s", exc)
         raise AdminGenError("The generator is unavailable right now.", 502) from exc
 
-    text = "".join(b.text for b in response.content if b.type == "text")
     raws = _parse_json_array(text)
 
     scenarios = []
