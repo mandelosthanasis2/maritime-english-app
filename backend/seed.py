@@ -13,6 +13,7 @@ import json
 import logging
 import os
 
+from lang import normalize_item_data
 from db import SessionLocal, init_db
 from models import Item, Lesson
 
@@ -88,6 +89,10 @@ def seed(path=None):
 
         for field in LESSON_FIELDS:
             setattr(lesson, field, payload.get(field))
+        # Keyed sibling of `description` (see lang.py); the source file's
+        # description is the Greek text.
+        if payload.get("description"):
+            lesson.description_i18n = {"el": payload["description"]}
 
         # Ensure the lesson row is present so item foreign keys resolve.
         session.flush()
@@ -112,7 +117,8 @@ def seed(path=None):
             row.type = item.get("type")
             row.level = item.get("level")
             row.order_index = index
-            row.data = item
+            # Language-bearing flat strings are stored keyed ({"el": ...}).
+            row.data, _changed = normalize_item_data(item)
 
         session.commit()
         logger.info(

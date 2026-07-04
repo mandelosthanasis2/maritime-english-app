@@ -17,6 +17,7 @@ import math
 import re
 
 import ai_text
+from lang import resolve_lang
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,7 @@ english shape by skill_type:
 - word_order: { "text": "<full correct English sentence>", "scrambled": ["<word/chunk>", ...] }  (chunks must reconstruct text exactly; multi-word chunks allowed)
 - roleplay (use "type":"dialogue", "skill_type":"roleplay"): { "scenario": "<English>", "lines": [{"speaker": "...", "text": "<English>"}], "user_role": "<which speaker the learner plays>" }
 - translation (use "type":"translation", "skill_type":"speaking"): { "text": "<target English>" }, with the Greek source in explanations.el.prompt
-- email_compose (EMAIL lessons only; use "type":"email_compose","skill_type":"email_compose"): { "scenario": "<the writing task, described IN GREEK — e.g. 'Η γεννήτρια Νο.2 σταμάτησε λόγω υπερθέρμανσης. Γράψε email στην εταιρεία να αναφέρεις το πρόβλημα.'>", "instructions": "<optional GREEK guidance: the key points the email should include>" }. NO answer, NO options — the learner writes a free-text email that is assessed by AI feedback, not auto-checked.
+- email_compose (EMAIL lessons only; use "type":"email_compose","skill_type":"email_compose"): { "scenario": {"el": "<the writing task, described IN GREEK — e.g. 'Η γεννήτρια Νο.2 σταμάτησε λόγω υπερθέρμανσης. Γράψε email στην εταιρεία να αναφέρεις το πρόβλημα.'>"}, "instructions": {"el": "<optional GREEK guidance: the key points the email should include>"} }. scenario and instructions are LANGUAGE-KEYED objects (learner-language text under the "el" key) because they are instructions to the learner, not English learning content. NO answer, NO options — the learner writes a free-text email that is assessed by AI feedback, not auto-checked.
 
 LESSON STRUCTURE, SIZE & PACING (mandatory for every lesson)
 - SIZE: aim for 12-18 items per lesson. NEVER produce more than 20 items in a single lesson — this is a HARD limit. If the source material is large, SPLIT it into MULTIPLE separate lessons (each a coherent sub-topic) instead of one oversized lesson.
@@ -329,8 +330,9 @@ def _item_signature(raw):
     if not isinstance(raw, dict):
         return ""
     english = raw.get("english") or {}
+    # resolve_lang: email scenarios are language-keyed objects ({"el": ...}).
     parts = [
-        english.get("text") or english.get("scenario") or "",
+        english.get("text") or resolve_lang(english.get("scenario")) or "",
         english.get("answer") or "",
     ]
     sig = " ".join(p for p in parts if p)
@@ -632,7 +634,7 @@ def lesson_category_samples(items, max_items=CATEGORIZE_SAMPLE_ITEMS):
     samples = []
     for item in items:
         english = (item.data or {}).get("english") or {}
-        text = english.get("text") or english.get("scenario") or ""
+        text = english.get("text") or resolve_lang(english.get("scenario")) or ""
         if text:
             samples.append(text[:120])
         if len(samples) >= max_items:
@@ -732,7 +734,7 @@ def lesson_digest(items, max_items=DIGEST_MAX_ITEMS):
         data = item.data or {}
         english = data.get("english") or {}
         el = (data.get("explanations") or {}).get("el") or {}
-        text = english.get("text") or english.get("scenario") or ""
+        text = english.get("text") or resolve_lang(english.get("scenario")) or ""
         line = f"- [{item.skill_type or item.type} | {item.difficulty}] {text}"
         if el.get("translation"):
             line += f" | μετάφραση: {el['translation']}"

@@ -24,7 +24,8 @@ Usage (locally or on Railway):
 
 import logging
 
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, or_, text
+from sqlalchemy.orm import Session
 
 from db import engine
 
@@ -185,6 +186,38 @@ def _backfill_order_index(conn):
             )
             updated += 1
     logger.info("Backfilled lessons.order_index for %d lesson(s).", updated)
+
+
+def _wrap_item_language_fields(conn):
+    """Wrap language-bearing flat strings in item JSON into {"el": ...}.
+
+    Multi-language readiness: the only per-item Greek that historically lived
+    as flat strings OUTSIDE the (already language-keyed) `explanations` map is
+    email_compose's english.scenario / english.instructions — see lang.py for
+    the full field inventory. Runs through the same normalizer as the write
+    endpoints, so re-runs find nothing flat left to wrap (a no-op).
+    """
+    from lang import normalize_item_data
+    from models import Item
+
+    session = Session(bind=conn)  # joins the surrounding migration transaction
+    items = (
+        session.query(Item)
+        .filter(or_(Item.type == "email_compose", Item.skill_type == "email_compose"))
+        .all()
+    )
+    changed = 0
+    for item in items:
+        data, did_change = normalize_item_data(item.data or {})
+        if did_change:
+            item.data = data
+            changed += 1
+    session.flush()
+    logger.info(
+        "Language-keyed item wrap: %d of %d email_compose item(s) updated.",
+        changed,
+        len(items),
+    )
 
 
 # A fixed key for the Postgres advisory lock that serialises concurrent runs
@@ -380,6 +413,48 @@ def run():
                 )
             else:
                 logger.info("user_progress.created_at already exists — skipping.")
+
+        # --- Multi-language readiness (see lang.py) --------------------------
+        # 1. The user's explanation language (only 'el' exists yet).
+        if insp.has_table("user_progress"):
+            progress_columns = {c["name"] for c in insp.get_columns("user_progress")}
+            if "explanation_language" not in progress_columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE user_progress ADD COLUMN explanation_language "
+                        "VARCHAR NOT NULL DEFAULT 'el'"
+                    )
+                )
+                logger.info("Added user_progress.explanation_language (default 'el').")
+            else:
+                logger.info("user_progress.explanation_language already exists — skipping.")
+
+        # 2. Language-keyed lesson descriptions: {"el": <existing description>}.
+        # The flat `description` column keeps the Greek text (back-compat and
+        # the admin UI); the keyed sibling is what user serializers resolve.
+        # Backfill only where still NULL so later edits survive re-runs.
+        lesson_columns = {c["name"] for c in insp.get_columns("lessons")}
+        if "description_i18n" not in lesson_columns:
+            column_type = "JSONB" if is_postgres else "JSON"
+            conn.execute(
+                text(f"ALTER TABLE lessons ADD COLUMN description_i18n {column_type}")
+            )
+            logger.info("Added lessons.description_i18n.")
+        json_object_fn = "jsonb_build_object" if is_postgres else "json_object"
+        result = conn.execute(
+            text(
+                f"UPDATE lessons SET description_i18n = {json_object_fn}('el', description) "
+                "WHERE description_i18n IS NULL AND description IS NOT NULL "
+                "AND description != ''"
+            )
+        )
+        if result.rowcount:
+            logger.info(
+                "Backfilled lessons.description_i18n for %s row(s).", result.rowcount
+            )
+
+        # 3. Wrap the per-item language-bearing flat strings into {"el": ...}.
+        _wrap_item_language_fields(conn)
 
         # Seed the daily-activity rollup (created by create_all on startup)
         # ONCE, from each user's last_active_date — so existing beta users

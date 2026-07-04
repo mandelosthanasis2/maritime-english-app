@@ -44,9 +44,15 @@ def _english(item):
 
 
 def _translation_el(item):
+    # Tolerant of the language-keyed shapes (lang.py); placement prompts stay
+    # Greek by definition until a real second language ships (field: prompt_el).
+    from lang import resolve_lang
+
     data = item.data or {}
-    el = (data.get("explanations") or {}).get("el") or {}
-    return el.get("translation") or ""
+    group = resolve_lang(data.get("explanations"), "el")
+    if not isinstance(group, dict):
+        return ""
+    return resolve_lang(group.get("translation"), "el") or ""
 
 
 def _question_kind(item):
