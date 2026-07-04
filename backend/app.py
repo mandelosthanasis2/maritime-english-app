@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
-from sqlalchemy import func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from admin import (
@@ -1857,6 +1857,41 @@ def admin_list_items():
         session.close()
 
 
+def _item_skill_block(session, item):
+    """A ready 422 response when `item` doesn't fit its lesson's skill_area.
+
+    The SAME fail-closed rule as lesson-level approve (lesson_skill_mismatches),
+    applied to one item — so single-item approval can't publish e.g. a fill_gap
+    into a listening lesson that lesson approval would refuse. Items without a
+    lesson (unassigned drafts) have nothing to validate against; returns None
+    when the item is allowed.
+    """
+    if not item.lesson_id:
+        return None
+    lesson = session.query(Lesson).filter_by(lesson_id=item.lesson_id).one_or_none()
+    if lesson is None:
+        return None
+    mismatches = lesson_skill_mismatches(lesson, [item])
+    if not mismatches:
+        return None
+    _item, kind = mismatches[0]
+    allowed = sorted(SKILL_AREA_ITEM_TYPES.get(lesson.skill_area, set()))
+    return (
+        jsonify(
+            {
+                "error": (
+                    f"Ο τύπος '{kind}' δεν επιτρέπεται στη δεξιότητα "
+                    f"'{lesson.skill_area}'. Επιτρεπτοί τύποι: {', '.join(allowed)}."
+                ),
+                "skill_area": lesson.skill_area,
+                "allowed_types": allowed,
+                "kind": kind,
+            }
+        ),
+        422,
+    )
+
+
 @app.route("/api/admin/items/<item_id>/approve", methods=["POST"])
 def admin_approve_item(item_id):
     try:
@@ -1869,6 +1904,10 @@ def admin_approve_item(item_id):
         item = session.query(Item).filter_by(item_id=item_id).one_or_none()
         if item is None:
             return jsonify({"error": f"Item '{item_id}' not found."}), 404
+        # Same skill-area gate as lesson approval — refuse to publish a mismatch.
+        blocked = _item_skill_block(session, item)
+        if blocked is not None:
+            return blocked
         item.status = "approved"
         session.commit()
         return jsonify(serialize_admin_item(item))
@@ -1889,6 +1928,13 @@ def admin_edit_item(item_id):
         item = session.query(Item).filter_by(item_id=item_id).one_or_none()
         if item is None:
             return jsonify({"error": f"Item '{item_id}' not found."}), 404
+
+        # Snapshot for the skill-area gate below: it must only fire on edits
+        # that CHANGE the publication state or kind, so plain text edits to
+        # legacy (already-approved, off-skill) items keep working.
+        old_status = item.status
+        old_kind = (item.skill_type, item.type)
+        old_lesson_id = item.lesson_id
 
         if "difficulty" in payload:
             if payload["difficulty"] not in ALLOWED_DIFFICULTY:
@@ -1921,6 +1967,20 @@ def admin_edit_item(item_id):
             if target is None:
                 return jsonify({"error": "Target lesson_id not found."}), 400
             item.lesson_id = payload["lesson_id"]
+
+        # Skill-area gate (same rule as approval): validate when this edit
+        # publishes the item (draft -> approved), moves it to another lesson,
+        # or changes the kind of an approved item. Pure content edits to
+        # existing approved items are untouched (legacy offenders stay
+        # editable — they are surfaced read-only by /admin/skill-mismatches).
+        becomes_approved = item.status == "approved" and old_status != "approved"
+        moved = item.lesson_id != old_lesson_id
+        kind_changed = (item.skill_type, item.type) != old_kind
+        if becomes_approved or (item.status == "approved" and (moved or kind_changed)):
+            blocked = _item_skill_block(session, item)
+            if blocked is not None:
+                session.rollback()
+                return blocked
 
         session.commit()
         return jsonify(serialize_admin_item(item))
@@ -1995,6 +2055,312 @@ def admin_draft_lessons():
         # Draft lessons first, then existing lessons that have draft items.
         lessons_payload.sort(key=lambda l: (l["existing"], l["title"] or ""))
         return jsonify({"lessons": lessons_payload, "ungrouped": ungrouped})
+    finally:
+        session.close()
+
+
+def _section_sort_key(cefr_level, skill_area):
+    """Canonical (level, skill) ordering; unknown/missing values sort last."""
+    level_rank = _CEFR_ORDER.index(cefr_level) if cefr_level in _CEFR_ORDER else len(_CEFR_ORDER)
+    skill_rank = _SKILL_ORDER.index(skill_area) if skill_area in _SKILL_ORDER else len(_SKILL_ORDER)
+    return (level_rank, cefr_level or "", skill_rank, skill_area or "")
+
+
+@app.route("/api/admin/review-queue", methods=["GET"])
+def admin_review_queue():
+    """The content-review queue: draft work awaiting review, oldest first.
+
+    A queue entry is a lesson that is itself a draft OR an approved lesson
+    holding draft items (enrichment / teaching-backfill output). Each entry
+    carries ONLY its draft items — that is what's under review — with the same
+    skill-mismatch flags the approval gate enforces, so the admin sees the ⚠
+    before hitting the 422. Paginated: ?offset=&limit= (limit capped at 50).
+
+    Also returns a dashboard summary computed in SQL (no item bodies loaded):
+    totals plus draft-item/lesson counts per (cefr_level, skill_area) section.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    try:
+        offset = max(0, int(request.args.get("offset", 0)))
+    except (TypeError, ValueError):
+        offset = 0
+    try:
+        limit = min(50, max(1, int(request.args.get("limit", 20))))
+    except (TypeError, ValueError):
+        limit = 20
+
+    session = SessionLocal()
+    try:
+        has_draft_items = (
+            session.query(Item.lesson_id)
+            .filter(Item.status == "draft", Item.lesson_id.isnot(None))
+            .scalar_subquery()
+        )
+        in_queue = or_(Lesson.status == "draft", Lesson.lesson_id.in_(has_draft_items))
+
+        total = session.query(func.count(Lesson.id)).filter(in_queue).scalar() or 0
+        # Oldest first (creation order = auto-increment id), so the queue is FIFO.
+        lessons = (
+            session.query(Lesson)
+            .filter(in_queue)
+            .order_by(Lesson.id)
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        items_by_lesson = {}
+        ids = [l.lesson_id for l in lessons]
+        if ids:
+            page_items = (
+                session.query(Item)
+                .filter(Item.lesson_id.in_(ids), Item.status == "draft")
+                .order_by(Item.order_index, Item.id)
+                .all()
+            )
+            for item in page_items:
+                items_by_lesson.setdefault(item.lesson_id, []).append(item)
+
+        # Draft items with no lesson (rare) ride along on the first page only.
+        ungrouped = []
+        if offset == 0:
+            ungrouped = (
+                session.query(Item)
+                .filter(Item.status == "draft", Item.lesson_id.is_(None))
+                .order_by(Item.id)
+                .all()
+            )
+
+        # Summary (SQL aggregates only). by_section counts draft items and the
+        # lessons holding them, grouped by the lesson's level + skill.
+        draft_items_total = (
+            session.query(func.count(Item.id)).filter(Item.status == "draft").scalar() or 0
+        )
+        draft_lessons_total = (
+            session.query(func.count(Lesson.id))
+            .filter(Lesson.status == "draft")
+            .scalar()
+            or 0
+        )
+        section_rows = (
+            session.query(
+                Lesson.cefr_level,
+                Lesson.skill_area,
+                func.count(func.distinct(Lesson.id)),
+                func.count(Item.id),
+            )
+            .join(Item, Item.lesson_id == Lesson.lesson_id)
+            .filter(Item.status == "draft")
+            .group_by(Lesson.cefr_level, Lesson.skill_area)
+            .all()
+        )
+        by_section = [
+            {"cefr_level": level, "skill_area": skill, "lessons": lessons_n, "items": items_n}
+            for level, skill, lessons_n, items_n in sorted(
+                section_rows, key=lambda r: _section_sort_key(r[0], r[1])
+            )
+        ]
+
+        return jsonify(
+            {
+                "summary": {
+                    "queue_lessons": total,
+                    "draft_lessons": draft_lessons_total,
+                    "draft_items": draft_items_total,
+                    "by_section": by_section,
+                },
+                "lessons": [
+                    serialize_admin_lesson(l, items_by_lesson.get(l.lesson_id, []))
+                    for l in lessons
+                ],
+                "ungrouped": [serialize_admin_item(i) for i in ungrouped],
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+            }
+        )
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/lessons/<lesson_id>/approve-items", methods=["POST"])
+def admin_approve_lesson_items(lesson_id):
+    """Bulk-approve a lesson's VALID draft items; skip + report the mismatches.
+
+    Unlike lesson approval (all-or-nothing, 422 on any mismatch), this approves
+    every draft item that fits the lesson's skill_area and returns the ones it
+    skipped — so one off-skill item doesn't block the rest of the batch. The
+    LESSON's own status is untouched: items approved under a draft lesson go
+    live only when the lesson itself is approved (existing behaviour).
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        lesson = session.query(Lesson).filter_by(lesson_id=lesson_id).one_or_none()
+        if lesson is None:
+            return jsonify({"error": f"Lesson '{lesson_id}' not found."}), 404
+
+        drafts = (
+            session.query(Item)
+            .filter_by(lesson_id=lesson_id, status="draft")
+            .order_by(Item.order_index, Item.id)
+            .all()
+        )
+        bad = {
+            item.item_id: kind for item, kind in lesson_skill_mismatches(lesson, drafts)
+        }
+
+        approved_ids, skipped = [], []
+        for item in drafts:
+            if item.item_id in bad:
+                skipped.append(
+                    {
+                        "item_id": item.item_id,
+                        "type": item.type,
+                        "skill_type": item.skill_type,
+                        "kind": bad[item.item_id],
+                    }
+                )
+            else:
+                item.status = "approved"
+                approved_ids.append(item.item_id)
+        session.commit()
+
+        logger.info(
+            "Bulk-approved %d item(s) in lesson %s (%d skipped as off-skill)",
+            len(approved_ids),
+            lesson_id,
+            len(skipped),
+        )
+        return jsonify(
+            {
+                "lesson_id": lesson_id,
+                "skill_area": lesson.skill_area,
+                "approved": approved_ids,
+                "skipped": skipped,
+            }
+        )
+    except Exception:  # pragma: no cover - unexpected failure
+        session.rollback()
+        logger.exception("Bulk item approval failed")
+        return jsonify({"error": "Internal error approving items."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/structure-overview", methods=["GET"])
+def admin_structure_overview():
+    """Content completeness per CEFR level and skill area, for the Levels tab.
+
+    Counts are computed IN SQL with a single grouped query — item bodies
+    (JSONB) are never loaded (avoiding the gradable_counts pattern that pulls
+    every row into Python). `gradable_items` counts approved items whose
+    skill_type/type is auto-gradable (vocabulary/fill_gap/word_order); this is
+    the same kind filter the module test uses, without is_testable's per-item
+    data-shape checks — a fine approximation for an editorial overview.
+
+    Aggregates (approved_items, gradable_items, has_test) count approved items
+    in APPROVED lessons — what learners can actually see. Draft lessons are
+    still listed with status so the admin sees them in context.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        testable = or_(
+            Item.skill_type.in_(TESTABLE_ITEM_TYPES), Item.type.in_(TESTABLE_ITEM_TYPES)
+        )
+        approved_n = func.coalesce(
+            func.sum(case((Item.status == "approved", 1), else_=0)), 0
+        )
+        gradable_n = func.coalesce(
+            func.sum(case((and_(Item.status == "approved", testable), 1), else_=0)), 0
+        )
+        draft_n = func.coalesce(func.sum(case((Item.status == "draft", 1), else_=0)), 0)
+
+        rows = (
+            session.query(Lesson, approved_n, gradable_n, draft_n)
+            .outerjoin(Item, Item.lesson_id == Lesson.lesson_id)
+            .group_by(Lesson.id)
+            .all()
+        )
+
+        def lesson_entry(lesson, items_n, gradable, drafts_n):
+            return {
+                "lesson_id": lesson.lesson_id,
+                "title": lesson.title,
+                "title_el": lesson.title_el,
+                "status": lesson.status,
+                "track": lesson.track,
+                "role_category": lesson.role_category or "common",
+                "cefr_level": lesson.cefr_level,
+                "skill_area": lesson.skill_area,
+                "order_index": lesson.order_index,
+                "source": lesson.source,
+                "item_count": int(items_n),
+                "gradable_count": int(gradable),
+                "draft_count": int(drafts_n),
+            }
+
+        def lesson_sort(entry):
+            order = entry["order_index"]
+            return (order if order is not None else 1_000_000, entry["title"] or "")
+
+        grouped = {}  # (cefr_level, skill_area) -> [lesson entries]
+        email_lessons = []
+        for lesson, items_n, gradable, drafts_n in rows:
+            entry = lesson_entry(lesson, items_n, gradable, drafts_n)
+            if lesson.track == "email":
+                email_lessons.append(entry)
+                continue
+            grouped.setdefault((lesson.cefr_level, lesson.skill_area), []).append(entry)
+
+        by_level = {}  # cefr_level -> [skill payloads]
+        for (level, skill), entries in sorted(
+            grouped.items(), key=lambda kv: _section_sort_key(kv[0][0], kv[0][1])
+        ):
+            entries.sort(key=lesson_sort)
+            approved_entries = [e for e in entries if e["status"] == "approved"]
+            gradable_total = sum(e["gradable_count"] for e in approved_entries)
+            by_level.setdefault(level, []).append(
+                {
+                    "skill_area": skill,
+                    "approved_lessons": len(approved_entries),
+                    "total_lessons": len(entries),
+                    "approved_items": sum(e["item_count"] for e in approved_entries),
+                    "gradable_items": gradable_total,
+                    "draft_items": sum(e["draft_count"] for e in entries),
+                    "has_test": gradable_total >= TEST_MIN_ITEMS,
+                    "lessons": entries,
+                }
+            )
+
+        levels = [
+            {"cefr_level": level, "skills": skills}
+            for level, skills in sorted(
+                by_level.items(), key=lambda kv: _section_sort_key(kv[0], None)
+            )
+        ]
+        email_lessons.sort(key=lesson_sort)
+
+        return jsonify(
+            {
+                "test_min_items": TEST_MIN_ITEMS,
+                "levels": levels,
+                "email_lessons": email_lessons,
+            }
+        )
     finally:
         session.close()
 
