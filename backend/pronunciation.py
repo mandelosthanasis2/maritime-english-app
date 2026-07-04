@@ -15,6 +15,8 @@ import shutil
 import subprocess
 import tempfile
 
+from usage import log_usage, wav_seconds
+
 logger = logging.getLogger(__name__)
 
 FFMPEG_BIN = os.environ.get("FFMPEG_BIN", "ffmpeg")
@@ -105,7 +107,7 @@ def _safe_remove(path):
             pass
 
 
-def assess_pronunciation(audio_bytes, reference_text, language="en-US"):
+def assess_pronunciation(audio_bytes, reference_text, language="en-US", user_id=None):
     """Run Azure pronunciation assessment and return a JSON-serializable dict."""
     if not reference_text or not reference_text.strip():
         raise PronunciationError("reference_text is required.", 400)
@@ -132,6 +134,9 @@ def assess_pronunciation(audio_bytes, reference_text, language="en-US"):
         ) from exc
 
     wav_path = convert_to_wav_file(audio_bytes)
+    # Azure bills pronunciation assessment per second of audio; the converted
+    # WAV gives an accurate duration even when the upload doesn't carry one.
+    audio_seconds = wav_seconds(wav_path)
 
     try:
         speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
@@ -154,6 +159,12 @@ def assess_pronunciation(audio_bytes, reference_text, language="en-US"):
         result = recognizer.recognize_once()
 
         if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+            log_usage(
+                provider="azure_pronunciation",
+                endpoint="pronunciation",
+                units=audio_seconds,
+                user_id=user_id,
+            )
             pa_result = speechsdk.PronunciationAssessmentResult(result)
             words = [
                 {
@@ -175,6 +186,13 @@ def assess_pronunciation(audio_bytes, reference_text, language="en-US"):
             }
 
         if result.reason == speechsdk.ResultReason.NoMatch:
+            # The audio was still processed (and billed) even with no speech.
+            log_usage(
+                provider="azure_pronunciation",
+                endpoint="pronunciation",
+                units=audio_seconds,
+                user_id=user_id,
+            )
             raise PronunciationError(
                 "No speech was recognized. Please speak clearly and try again.", 422
             )

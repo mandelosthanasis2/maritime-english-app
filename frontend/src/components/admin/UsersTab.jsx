@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { adminUserDetail, adminUsers } from '../../api.js'
 import { SKILL_AREA_LABEL } from './constants.js'
 
@@ -284,13 +285,16 @@ function UserRow({ user }) {
 // 👥 Users & beta health: "are people coming back?" up top, "where do they
 // get stuck?" one tap into each user. Read-only.
 export default function UsersTab({ onAuthFail }) {
+  // ?uq=<email> pre-fills the search — the Costs tab's top-user links use it
+  // to land straight on that user.
+  const [params] = useSearchParams()
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
   const [summary, setSummary] = useState(null)
   const [users, setUsers] = useState([])
   const [total, setTotal] = useState(0)
   const [sort, setSort] = useState('last_active')
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(params.get('uq') || '')
   const [loadingMore, setLoadingMore] = useState(false)
   const debounceRef = useRef(null)
 

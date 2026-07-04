@@ -8,11 +8,12 @@ import logging
 import os
 
 from pronunciation import PronunciationError, _safe_remove, convert_to_wav_file
+from usage import log_usage, wav_seconds
 
 logger = logging.getLogger(__name__)
 
 
-def transcribe(audio_bytes, language="en-US"):
+def transcribe(audio_bytes, language="en-US", user_id=None):
     """Transcribe uploaded audio and return {"text": str} (empty if no speech)."""
     key = os.environ.get("AZURE_SPEECH_KEY")
     region = os.environ.get("AZURE_SPEECH_REGION")
@@ -32,6 +33,9 @@ def transcribe(audio_bytes, language="en-US"):
         raise PronunciationError("Speech-to-text is not available on the server.", 503) from exc
 
     wav_path = convert_to_wav_file(audio_bytes)
+    # Azure bills STT per second of audio; the converted WAV gives an accurate
+    # duration even when the original upload (WebM/Opus) doesn't carry one.
+    audio_seconds = wav_seconds(wav_path)
 
     try:
         speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
@@ -44,10 +48,16 @@ def transcribe(audio_bytes, language="en-US"):
         result = recognizer.recognize_once()
 
         if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+            log_usage(
+                provider="azure_stt", endpoint="transcribe", units=audio_seconds, user_id=user_id
+            )
             return {"text": result.text}
 
         if result.reason == speechsdk.ResultReason.NoMatch:
-            # No speech recognized — return empty text rather than an error.
+            # No speech recognized — the audio was still processed (and billed).
+            log_usage(
+                provider="azure_stt", endpoint="transcribe", units=audio_seconds, user_id=user_id
+            )
             return {"text": ""}
 
         if result.reason == speechsdk.ResultReason.Canceled:

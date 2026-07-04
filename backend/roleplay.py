@@ -10,6 +10,8 @@ import json
 import logging
 import os
 
+from usage import log_usage, token_usage
+
 logger = logging.getLogger(__name__)
 
 # Use the latest, most capable Claude model.
@@ -77,7 +79,7 @@ def _clean_history(history):
     return cleaned
 
 
-def chat(scenario, user_role, history, user_message):
+def chat(scenario, user_role, history, user_message, user_id=None):
     """Run one role-play turn and return {"reply": str, "correction": str|None}."""
     user_message = (user_message or "").strip()
     scenario = (scenario or "").strip()
@@ -149,6 +151,17 @@ def chat(scenario, user_role, history, user_message):
     except anthropic.APIError as exc:
         logger.exception("Anthropic API call failed.")
         raise RoleplayError("The AI tutor is unavailable right now. Please try again.", 502) from exc
+
+    # Log right after the API call: the tokens are billed even if the reply
+    # below turns out to be unparseable.
+    input_tokens, output_tokens = token_usage(response)
+    log_usage(
+        provider="claude",
+        endpoint="roleplay",
+        units=input_tokens + output_tokens,
+        user_id=user_id,
+        details={"input_tokens": input_tokens, "output_tokens": output_tokens, "model": MODEL},
+    )
 
     text = next((b.text for b in response.content if b.type == "text"), "")
     try:

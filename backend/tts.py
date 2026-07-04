@@ -8,6 +8,7 @@ import logging
 import os
 
 from pronunciation import PronunciationError
+from usage import log_usage
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ DEFAULT_VOICE = os.environ.get("AZURE_TTS_VOICE", "en-US-GuyNeural")
 MAX_TEXT_LENGTH = 1000
 
 
-def synthesize(text, voice=None):
+def synthesize(text, voice=None, user_id=None):
     """Synthesize text to MP3 bytes. Raises PronunciationError on failure."""
     text = (text or "").strip()
     if not text:
@@ -52,6 +53,8 @@ def synthesize(text, voice=None):
     result = synthesizer.speak_text_async(text).get()
 
     if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        # Azure bills neural TTS per character of input text.
+        log_usage(provider="azure_tts", endpoint="tts", units=len(text), user_id=user_id)
         return bytes(result.audio_data)
 
     if result.reason == speechsdk.ResultReason.Canceled:
