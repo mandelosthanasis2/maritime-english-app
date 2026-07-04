@@ -350,6 +350,60 @@ def run():
         else:
             logger.info("items.lesson_id already nullable — skipping.")
 
+        # User signup timestamp for the admin Users tab (beta retention).
+        # Added WITHOUT a default first (ADD COLUMN ... DEFAULT now() would
+        # stamp every existing row with the migration time), then backfilled
+        # best-effort from each user's earliest lesson completion, then given
+        # the now() default for future inserts. Rows with no completions stay
+        # NULL ("signup unknown") and are skipped by retention cohorts.
+        if insp.has_table("user_progress"):
+            progress_columns = {c["name"] for c in insp.get_columns("user_progress")}
+            if "created_at" not in progress_columns:
+                conn.execute(
+                    text("ALTER TABLE user_progress ADD COLUMN created_at TIMESTAMP WITH TIME ZONE")
+                )
+                result = conn.execute(
+                    text(
+                        "UPDATE user_progress SET created_at = ("
+                        "  SELECT MIN(c.completed_at) FROM user_lesson_completions c"
+                        "  WHERE c.user_id = user_progress.user_id"
+                        ") WHERE created_at IS NULL"
+                    )
+                )
+                if is_postgres:
+                    conn.execute(
+                        text("ALTER TABLE user_progress ALTER COLUMN created_at SET DEFAULT now()")
+                    )
+                logger.info(
+                    "Added user_progress.created_at; backfilled from completions (%s row(s) touched).",
+                    result.rowcount,
+                )
+            else:
+                logger.info("user_progress.created_at already exists — skipping.")
+
+        # Seed the daily-activity rollup (created by create_all on startup)
+        # ONCE, from each user's last_active_date — so existing beta users
+        # aren't all "inactive" the moment the table appears. Only runs while
+        # the table is completely empty, so re-runs never duplicate rows.
+        if insp.has_table("user_activity_days") and insp.has_table("user_progress"):
+            existing_rows = conn.execute(
+                text("SELECT COUNT(*) FROM user_activity_days")
+            ).scalar()
+            if existing_rows == 0:
+                result = conn.execute(
+                    text(
+                        "INSERT INTO user_activity_days (user_id, activity_date, answers) "
+                        "SELECT user_id, last_active_date, 0 FROM user_progress "
+                        "WHERE last_active_date IS NOT NULL"
+                    )
+                )
+                logger.info(
+                    "Seeded user_activity_days from last_active_date (%s row(s)).",
+                    result.rowcount,
+                )
+            else:
+                logger.info("user_activity_days already has data — skipping seed.")
+
     logger.info("Migration complete.")
 
 

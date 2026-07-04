@@ -2,7 +2,7 @@ import logging
 import os
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
@@ -37,6 +37,7 @@ from rate_limit import RateLimiter
 from models import (
     Item,
     Lesson,
+    UserActivityDay,
     UserItemStat,
     UserLessonCompletion,
     UserLevelTest,
@@ -343,15 +344,81 @@ def writing_practice_lesson_ids(session):
 
 # --- Progress helpers --------------------------------------------------------
 
+# The app's audience lives on Greek time; admin metrics bucket days in
+# Europe/Athens regardless of the server timezone. The `tzdata` package in
+# requirements guarantees the zone exists even on slim images; the fixed
+# UTC+3 fallback keeps the app alive if it somehow doesn't.
+try:
+    from zoneinfo import ZoneInfo
+
+    ATHENS_TZ = ZoneInfo("Europe/Athens")
+except Exception:  # pragma: no cover - missing tz database
+    ATHENS_TZ = timezone(timedelta(hours=3))
+
+
+def athens_date(dt=None):
+    """The Europe/Athens calendar date of `dt` (default: now)."""
+    return (dt or datetime.now(timezone.utc)).astimezone(ATHENS_TZ).date()
+
+
+def record_activity(session, user_id, answered=False):
+    """Upsert today's (Athens) row in the daily-activity rollup.
+
+    Presence-only calls (opened the app, completed a lesson) keep `answers`
+    unchanged; `answered=True` (one recorded answer) increments it. On
+    PostgreSQL this is a real ON CONFLICT upsert so concurrent first-writes
+    of the day can't collide; elsewhere (SQLite tests) a flush + select is
+    enough. Never raises on failure — metrics must not break user requests.
+    """
+    day = athens_date()
+    increment = 1 if answered else 0
+    try:
+        if session.get_bind().dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            table = UserActivityDay.__table__
+            stmt = pg_insert(table).values(
+                user_id=user_id, activity_date=day, answers=increment
+            )
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["user_id", "activity_date"],
+                set_={"answers": table.c.answers + increment},
+            )
+            session.execute(stmt)
+        else:
+            session.flush()  # autoflush is off — make pending rows visible
+            row = (
+                session.query(UserActivityDay)
+                .filter_by(user_id=user_id, activity_date=day)
+                .one_or_none()
+            )
+            if row is None:
+                session.add(
+                    UserActivityDay(user_id=user_id, activity_date=day, answers=increment)
+                )
+            else:
+                row.answers += increment
+    except Exception:  # pragma: no cover - best-effort rollup
+        logger.exception("Recording daily activity failed (ignored)")
+
 
 def get_or_create_progress(session, user_id, email=None):
     progress = session.get(UserProgress, user_id)
     if progress is None:
-        progress = UserProgress(user_id=user_id, email=email, total_xp=0, current_streak=0)
+        progress = UserProgress(
+            user_id=user_id,
+            email=email,
+            total_xp=0,
+            current_streak=0,
+            created_at=datetime.now(timezone.utc),
+        )
         session.add(progress)
         session.flush()
     elif email and progress.email != email:
         progress.email = email
+    # Every authenticated user endpoint passes through here — the single choke
+    # point where "this user was active today" is recorded for beta metrics.
+    record_activity(session, user_id)
     return progress
 
 
@@ -1191,6 +1258,9 @@ def record_answer(lesson_id):
         xp_earned = XP_PRACTICE_CORRECT if correct else XP_PRACTICE_WRONG
         progress.total_xp += xp_earned
         touch_streak(progress, now.date())
+        # Count the answer itself in the daily rollup (presence was already
+        # recorded by get_or_create_progress above).
+        record_activity(session, user_id, answered=True)
 
         session.commit()
         payload = serialize_item_stat(stat)
@@ -2359,6 +2429,450 @@ def admin_structure_overview():
                 "test_min_items": TEST_MIN_ITEMS,
                 "levels": levels,
                 "email_lessons": email_lessons,
+            }
+        )
+    finally:
+        session.close()
+
+
+# --- Admin: users / beta health ------------------------------------------------
+
+
+def _as_utc(dt):
+    """Normalize a DB datetime to aware UTC (SQLite returns naive)."""
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _iso(dt):
+    dt = _as_utc(dt)
+    return dt.isoformat() if dt else None
+
+
+def _beta_summary(session):
+    """The beta-health numbers for the Users tab header.
+
+    Actives come from the daily rollup (user_activity_days); retention cohorts
+    are evaluated in Python over ONE (user_id, created_at) query and ONE
+    activity query — the user count is the bound (closed beta, tens of rows),
+    no answer histories are ever loaded.
+    """
+    now = datetime.now(timezone.utc)
+    today = athens_date()
+    week_start = today - timedelta(days=6)  # rolling 7 Athens days incl. today
+
+    active_today = (
+        session.query(func.count(func.distinct(UserActivityDay.user_id)))
+        .filter(UserActivityDay.activity_date == today)
+        .scalar()
+        or 0
+    )
+    active_week = (
+        session.query(func.count(func.distinct(UserActivityDay.user_id)))
+        .filter(UserActivityDay.activity_date >= week_start)
+        .scalar()
+        or 0
+    )
+    new_week = (
+        session.query(func.count(UserProgress.user_id))
+        .filter(UserProgress.created_at >= now - timedelta(days=7))
+        .scalar()
+        or 0
+    )
+    completions_week = (
+        session.query(func.count(UserLessonCompletion.id))
+        .filter(UserLessonCompletion.completed_at >= now - timedelta(days=7))
+        .scalar()
+        or 0
+    )
+
+    # Retention. Signup day = the Athens date of created_at. D1: active the
+    # day AFTER signup. D7: active on any of days 1-7 after signup.
+    signup_rows = (
+        session.query(UserProgress.user_id, UserProgress.created_at)
+        .filter(UserProgress.created_at.isnot(None))
+        .all()
+    )
+    signup = {uid: athens_date(_as_utc(created)) for uid, created in signup_rows}
+    d1_cohort = [uid for uid, day in signup.items() if day <= today - timedelta(days=2)]
+    d7_cohort = [uid for uid, day in signup.items() if day <= today - timedelta(days=8)]
+
+    activity_days = {}
+    relevant = set(d1_cohort) | set(d7_cohort)
+    if relevant:
+        rows = (
+            session.query(UserActivityDay.user_id, UserActivityDay.activity_date)
+            .filter(UserActivityDay.user_id.in_(relevant))
+            .all()
+        )
+        for uid, day in rows:
+            activity_days.setdefault(uid, set()).add(day)
+
+    d1_returned = sum(
+        1
+        for uid in d1_cohort
+        if signup[uid] + timedelta(days=1) in activity_days.get(uid, ())
+    )
+    d7_returned = sum(
+        1
+        for uid in d7_cohort
+        if any(
+            signup[uid] + timedelta(days=1) <= day <= signup[uid] + timedelta(days=7)
+            for day in activity_days.get(uid, ())
+        )
+    )
+
+    return {
+        "active_today": active_today,
+        "active_week": active_week,
+        "new_week": new_week,
+        "lessons_per_active_week": (
+            round(completions_week / active_week, 1) if active_week else None
+        ),
+        # The frontend shows a raw fraction when the cohort is small (<5).
+        "d1_retention": {"returned": d1_returned, "cohort": len(d1_cohort)},
+        "d7_retention": {"returned": d7_returned, "cohort": len(d7_cohort)},
+    }
+
+
+# "Furthest position" on the skill tree: the highest CEFR level the user has
+# completed anything in; ties within the level go to the skill with the most
+# completed lessons.
+def _positions_for(session, user_ids):
+    if not user_ids:
+        return {}
+    rows = (
+        session.query(
+            UserLessonCompletion.user_id,
+            Lesson.cefr_level,
+            Lesson.skill_area,
+            func.count(UserLessonCompletion.id),
+        )
+        .join(Lesson, Lesson.lesson_id == UserLessonCompletion.lesson_id)
+        .filter(
+            UserLessonCompletion.user_id.in_(user_ids),
+            Lesson.cefr_level.isnot(None),
+        )
+        .group_by(UserLessonCompletion.user_id, Lesson.cefr_level, Lesson.skill_area)
+        .all()
+    )
+    best = {}
+    for uid, level, skill, count in rows:
+        level_rank = _CEFR_ORDER.index(level) if level in _CEFR_ORDER else -1
+        key = (level_rank, count)
+        current = best.get(uid)
+        if current is None or key > current[0]:
+            best[uid] = (key, {"cefr_level": level, "skill_area": skill})
+    return {uid: pos for uid, (_key, pos) in best.items()}
+
+
+@app.route("/api/admin/users", methods=["GET"])
+def admin_users():
+    """Beta-health summary + a paginated, sortable, filterable user list.
+
+    Query params: sort=last_active|xp|created (default last_active),
+    q=<email substring>, offset, limit (<=50, default 25). All aggregates are
+    SQL (grouped subqueries joined to user_progress); only the current page's
+    rows are serialized.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    sort = request.args.get("sort", "last_active")
+    email_q = (request.args.get("q") or "").strip()
+    try:
+        offset = max(0, int(request.args.get("offset", 0)))
+    except (TypeError, ValueError):
+        offset = 0
+    try:
+        limit = min(50, max(1, int(request.args.get("limit", 25))))
+    except (TypeError, ValueError):
+        limit = 25
+
+    session = SessionLocal()
+    try:
+        comp_sub = (
+            session.query(
+                UserLessonCompletion.user_id.label("uid"),
+                func.count(UserLessonCompletion.id).label("lessons_completed"),
+                func.max(UserLessonCompletion.completed_at).label("last_completion"),
+            )
+            .group_by(UserLessonCompletion.user_id)
+            .subquery()
+        )
+        ans_sub = (
+            session.query(
+                UserItemStat.user_id.label("uid"),
+                func.max(UserItemStat.last_answered_at).label("last_answer"),
+            )
+            .group_by(UserItemStat.user_id)
+            .subquery()
+        )
+
+        query = (
+            session.query(
+                UserProgress,
+                comp_sub.c.lessons_completed,
+                comp_sub.c.last_completion,
+                ans_sub.c.last_answer,
+            )
+            .outerjoin(comp_sub, comp_sub.c.uid == UserProgress.user_id)
+            .outerjoin(ans_sub, ans_sub.c.uid == UserProgress.user_id)
+        )
+        if email_q:
+            query = query.filter(UserProgress.email.ilike(f"%{email_q}%"))
+
+        # COALESCE keeps NULLs last on every dialect (PG sorts NULLs first on
+        # DESC, SQLite last — a fixed epoch fallback makes them agree).
+        epoch_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        epoch_d = date(1970, 1, 1)
+        if sort == "xp":
+            query = query.order_by(UserProgress.total_xp.desc(), UserProgress.user_id)
+        elif sort == "created":
+            query = query.order_by(
+                func.coalesce(UserProgress.created_at, epoch_dt).desc(),
+                UserProgress.user_id,
+            )
+        else:  # last_active (default)
+            query = query.order_by(
+                func.coalesce(UserProgress.last_active_date, epoch_d).desc(),
+                UserProgress.total_xp.desc(),
+                UserProgress.user_id,
+            )
+
+        count_query = session.query(func.count(UserProgress.user_id))
+        if email_q:
+            count_query = count_query.filter(UserProgress.email.ilike(f"%{email_q}%"))
+        total = count_query.scalar() or 0
+
+        rows = query.offset(offset).limit(limit).all()
+        positions = _positions_for(session, [p.user_id for p, *_rest in rows])
+
+        users = []
+        for progress, lessons_completed, last_completion, last_answer in rows:
+            seen_candidates = [d for d in (_as_utc(last_completion), _as_utc(last_answer)) if d]
+            users.append(
+                {
+                    "user_id": progress.user_id,
+                    "email": progress.email,
+                    "created_at": _iso(progress.created_at),
+                    "last_active_date": (
+                        progress.last_active_date.isoformat()
+                        if progress.last_active_date
+                        else None
+                    ),
+                    "last_seen_at": _iso(max(seen_candidates)) if seen_candidates else None,
+                    "total_xp": progress.total_xp,
+                    "current_streak": progress.current_streak,
+                    "lessons_completed": int(lessons_completed or 0),
+                    "cefr_level": progress.cefr_level,
+                    "maritime_level": progress.maritime_level,
+                    "user_role": progress.user_role,
+                    "position": positions.get(progress.user_id),
+                }
+            )
+
+        return jsonify(
+            {
+                "summary": _beta_summary(session),
+                "users": users,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+            }
+        )
+    finally:
+        session.close()
+
+
+@app.route("/api/admin/users/<user_id>", methods=["GET"])
+def admin_user_detail(user_id):
+    """READ-ONLY drill-down for one beta user: full skill-tree journey,
+    14-day activity sparkline, placement, and where they struggle."""
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    session = SessionLocal()
+    try:
+        progress = session.get(UserProgress, user_id)
+        if progress is None:
+            return jsonify({"error": f"User '{user_id}' not found."}), 404
+
+        # Journey: this user's completions with their lessons, grouped by
+        # (cefr_level, skill_area), plus section/level test results.
+        journey_rows = (
+            session.query(UserLessonCompletion, Lesson)
+            .outerjoin(Lesson, Lesson.lesson_id == UserLessonCompletion.lesson_id)
+            .filter(UserLessonCompletion.user_id == user_id)
+            .all()
+        )
+        section_tests = (
+            session.query(UserSectionTest).filter_by(user_id=user_id).all()
+        )
+        level_tests = session.query(UserLevelTest).filter_by(user_id=user_id).all()
+
+        grouped = {}  # (cefr, skill) -> [lesson entries]
+        for completion, lesson in journey_rows:
+            level = lesson.cefr_level if lesson else None
+            skill = lesson.skill_area if lesson else None
+            grouped.setdefault((level, skill), []).append(
+                {
+                    "lesson_id": completion.lesson_id,
+                    "title": lesson.title if lesson else completion.lesson_id,
+                    "order_index": lesson.order_index if lesson else None,
+                    "best_score": completion.best_score,
+                    "passed": completion.best_score is None
+                    or completion.best_score >= LESSON_PASS_SCORE,
+                    "times_completed": completion.times_completed,
+                    "completed_at": _iso(completion.completed_at),
+                }
+            )
+        tests_by_section = {
+            (t.cefr_level, t.skill_area): {
+                "best_score": t.best_score,
+                "mastered": t.best_score is not None and t.best_score >= LESSON_PASS_SCORE,
+                "passed_at": _iso(t.passed_at),
+            }
+            for t in section_tests
+        }
+        # Sections with a test attempt but no completions still show up.
+        for key in tests_by_section:
+            grouped.setdefault(key, [])
+
+        by_level = {}
+        for (level, skill), lessons in sorted(
+            grouped.items(), key=lambda kv: _section_sort_key(kv[0][0], kv[0][1])
+        ):
+            lessons.sort(
+                key=lambda e: (
+                    e["order_index"] if e["order_index"] is not None else 1_000_000,
+                    e["title"] or "",
+                )
+            )
+            by_level.setdefault(level, []).append(
+                {
+                    "skill_area": skill,
+                    "lessons": lessons,
+                    "section_test": tests_by_section.get((level, skill)),
+                }
+            )
+        journey = [
+            {"cefr_level": level, "skills": skills}
+            for level, skills in sorted(
+                by_level.items(), key=lambda kv: _section_sort_key(kv[0], None)
+            )
+        ]
+
+        # 14-day sparkline from the rollup (oldest -> newest, gaps = 0).
+        today = athens_date()
+        first = today - timedelta(days=13)
+        spark_rows = (
+            session.query(UserActivityDay.activity_date, UserActivityDay.answers)
+            .filter(
+                UserActivityDay.user_id == user_id,
+                UserActivityDay.activity_date >= first,
+            )
+            .all()
+        )
+        by_day = {day: answers for day, answers in spark_rows}
+        activity = [
+            {
+                "date": (first + timedelta(days=i)).isoformat(),
+                "answers": by_day.get(first + timedelta(days=i), 0),
+            }
+            for i in range(14)
+        ]
+
+        # Totals + "where they get stuck", all aggregated in SQL.
+        correct_total, wrong_total = (
+            session.query(
+                func.coalesce(func.sum(UserItemStat.correct_count), 0),
+                func.coalesce(func.sum(UserItemStat.wrong_count), 0),
+            )
+            .filter(UserItemStat.user_id == user_id)
+            .one()
+        )
+
+        wrong_sum = func.coalesce(func.sum(UserItemStat.wrong_count), 0)
+        most_wrong_row = (
+            session.query(Item.lesson_id, Lesson.title, wrong_sum.label("wrong"))
+            .select_from(UserItemStat)
+            .join(Item, Item.item_id == UserItemStat.item_id)
+            .join(Lesson, Lesson.lesson_id == Item.lesson_id)
+            .filter(UserItemStat.user_id == user_id)
+            .group_by(Item.lesson_id, Lesson.title)
+            .order_by(wrong_sum.desc())
+            .first()
+        )
+        most_wrong = None
+        if most_wrong_row and int(most_wrong_row[2]) > 0:
+            most_wrong = {
+                "lesson_id": most_wrong_row[0],
+                "title": most_wrong_row[1],
+                "wrong": int(most_wrong_row[2]),
+            }
+
+        last_row = (
+            session.query(UserItemStat.last_answered_at, Item.lesson_id, Lesson.title)
+            .select_from(UserItemStat)
+            .join(Item, Item.item_id == UserItemStat.item_id)
+            .join(Lesson, Lesson.lesson_id == Item.lesson_id)
+            .filter(
+                UserItemStat.user_id == user_id,
+                UserItemStat.last_answered_at.isnot(None),
+            )
+            .order_by(UserItemStat.last_answered_at.desc())
+            .first()
+        )
+        last_attempted = (
+            {"lesson_id": last_row[1], "title": last_row[2], "at": _iso(last_row[0])}
+            if last_row
+            else None
+        )
+
+        return jsonify(
+            {
+                "user": {
+                    "user_id": progress.user_id,
+                    "email": progress.email,
+                    "created_at": _iso(progress.created_at),
+                    "last_active_date": (
+                        progress.last_active_date.isoformat()
+                        if progress.last_active_date
+                        else None
+                    ),
+                    "total_xp": progress.total_xp,
+                    "current_streak": progress.current_streak,
+                    "user_role": progress.user_role,
+                    # Placement result (all we store): NULL = not taken.
+                    "placement": {
+                        "cefr_level": progress.cefr_level,
+                        "maritime_level": progress.maritime_level,
+                    },
+                },
+                "journey": journey,
+                "level_tests": [
+                    {
+                        "cefr_level": t.cefr_level,
+                        "best_score": t.best_score,
+                        "completed": t.best_score is not None
+                        and t.best_score >= LESSON_PASS_SCORE,
+                        "passed_at": _iso(t.passed_at),
+                    }
+                    for t in level_tests
+                ],
+                "activity": activity,
+                "totals": {
+                    "answers": int(correct_total) + int(wrong_total),
+                    "correct": int(correct_total),
+                    "wrong": int(wrong_total),
+                },
+                "stuck": {"most_wrong": most_wrong, "last_attempted": last_attempted},
             }
         )
     finally:

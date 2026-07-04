@@ -7,3 +7,4 @@ azure-cognitiveservices-speech
 anthropic
 pyjwt[crypto]
 pypdf
+tzdata
