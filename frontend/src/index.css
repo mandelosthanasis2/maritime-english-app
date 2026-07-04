@@ -4470,3 +4470,391 @@ textarea {
   flex: 1 1 12rem;
   min-width: 10rem;
 }
+
+/* ============================================================
+   Admin dashboard (tabbed) — shell, review queue, levels tabs
+   ============================================================ */
+
+/* Tab bar: sticky, horizontally scrollable on narrow phones. */
+.admin-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.4rem 0.1rem;
+  margin: -0.4rem -0.1rem 0;
+  background: var(--bg, transparent);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.admin-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-tab {
+  font: inherit;
+  font-family: var(--font-head);
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  min-height: var(--tap-min);
+  padding: 0.5rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.admin-tab--active {
+  background: var(--teal-soft);
+  border-color: var(--turquoise);
+  color: var(--teal);
+}
+
+/* Placeholder tabs (Users / Costs — PR B/C). */
+.admin-soon {
+  align-items: center;
+  text-align: center;
+  padding: 2.4rem 1.2rem;
+}
+.admin-soon__icon {
+  font-size: 2.4rem;
+}
+
+/* --- 📥 Content Review ------------------------------------------------- */
+
+.rq {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.rq-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.rq-summary__totals,
+.rq-summary__sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.rq-chip {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.rq-chip--total {
+  background: var(--teal-soft);
+  border-color: var(--turquoise);
+  color: var(--teal);
+}
+.rq-chip--section {
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.rq-collapse {
+  text-align: left;
+}
+
+.rq-lesson__meta {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--muted, #9db4c3);
+}
+
+.rq-more {
+  align-self: center;
+}
+
+/* One draft item row: main area (tap = preview) + compact action buttons. */
+.rq-item {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  padding: 0.55rem 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.rq-item--warn {
+  border-color: var(--amber-border);
+  background: var(--amber-bg);
+}
+
+.rq-item__main {
+  font: inherit;
+  cursor: pointer;
+  flex: 1 1 12rem;
+  min-width: 0;
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  padding: 0;
+}
+.rq-item__kind {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--teal);
+  background: var(--teal-soft);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  white-space: nowrap;
+}
+.rq-item__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92rem;
+}
+
+.rq-item__actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.rq-btn {
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.rq-btn:active {
+  transform: scale(0.94);
+}
+.rq-btn--approve {
+  border-color: var(--correct);
+  background: var(--correct-bg);
+}
+.rq-btn--delete {
+  border-color: var(--wrong);
+  background: var(--wrong-bg);
+}
+.rq-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rq-item__error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--wrong);
+}
+
+/* Real-player preview inside the review row. */
+.rq-preview {
+  flex-basis: 100%;
+  border-top: 1px dashed var(--border);
+  padding-top: 0.7rem;
+  margin-top: 0.2rem;
+}
+.rq-preview__label {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--teal);
+}
+.rq-item .admin-item {
+  flex-basis: 100%;
+}
+
+/* --- 📚 Levels & Structure ---------------------------------------------- */
+
+.lv {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.lv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.lv-level__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  margin-right: 0.5rem;
+  padding: 0 0.4rem;
+  border-radius: 0.6rem;
+  background: var(--navy-2);
+  color: var(--teal);
+  font-family: var(--font-head);
+  font-weight: 700;
+}
+
+.lv-level__skills {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.8rem;
+}
+@media (min-width: 720px) {
+  .lv-level__skills {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.lv-skill {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  background: var(--surface);
+}
+.lv-skill--ready {
+  border-color: rgba(61, 220, 143, 0.4);
+}
+.lv-skill--thin {
+  border-color: var(--amber-border);
+}
+
+.lv-skill__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.lv-skill__name {
+  font-family: var(--font-head);
+  font-weight: 600;
+}
+.lv-skill__ready {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.lv-skill__ready--ready {
+  color: var(--correct);
+  background: var(--correct-bg);
+}
+.lv-skill__ready--thin {
+  color: var(--amber);
+  background: var(--amber-bg);
+}
+.lv-skill__ready--empty {
+  color: var(--muted, #9db4c3);
+  border: 1px dashed var(--border);
+}
+
+.lv-skill__counts {
+  margin: 0;
+  font-size: 0.88rem;
+}
+.lv-skill__drafts {
+  color: var(--amber);
+}
+
+.lv-skill__test {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted, #9db4c3);
+}
+.lv-skill__test--ok {
+  color: var(--correct);
+}
+
+.lv-skill__lessons {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.lv-lesson {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.lv-lesson--draft {
+  border-style: dashed;
+}
+
+.lv-lesson__head {
+  font: inherit;
+  cursor: pointer;
+  width: 100%;
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.55rem 0.7rem;
+  border: none;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+}
+.lv-lesson__title {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.lv-lesson__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.lv-lesson__count,
+.lv-lesson__order {
+  font-size: 0.8rem;
+  color: var(--muted, #9db4c3);
+  white-space: nowrap;
+}
+
+.lv-lesson__manage {
+  border-top: 1px dashed var(--border);
+  padding: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.lv-lesson__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

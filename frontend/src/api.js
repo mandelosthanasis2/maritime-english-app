@@ -347,6 +347,31 @@ export function adminDraftLessons() {
   return adminRequest('/api/admin/draft-lessons')
 }
 
+// The content-review queue (oldest first): draft lessons + approved lessons
+// holding draft items, each with ONLY its draft items, plus a summary of
+// pending counts per (cefr_level, skill_area). Paginated (limit <= 50).
+export function adminReviewQueue({ offset = 0, limit = 20 } = {}) {
+  return adminRequest(
+    `/api/admin/review-queue?offset=${offset}&limit=${limit}`,
+  )
+}
+
+// Bulk-approve every draft item of a lesson that fits its skill_area.
+// Returns { approved: [item_id], skipped: [{item_id, kind}] } — mismatched
+// items are skipped and reported instead of failing the whole batch.
+export function adminApproveLessonItems(lessonId) {
+  return adminRequest(
+    `/api/admin/lessons/${encodeURIComponent(lessonId)}/approve-items`,
+    { method: 'POST' },
+  )
+}
+
+// Content completeness per CEFR level / skill area for the Levels tab
+// (counts computed server-side in SQL).
+export function adminStructureOverview() {
+  return adminRequest('/api/admin/structure-overview')
+}
+
 export function adminAutoCategorize() {
   return adminRequest('/api/admin/auto-categorize', { method: 'POST' })
 }
