@@ -61,6 +61,12 @@ class Lesson(Base):
     # keep using untouched. Email-track lessons leave these NULL (separate path).
     cefr_level = Column(String)  # A2 | B1 | B2 | C1 | C2
     skill_area = Column(String)  # vocabulary | grammar | listening | speaking
+    # Language-keyed lesson description: {"el": "<Greek>", ...} — the per-
+    # language sibling of `description` (which stays the canonical Greek text
+    # so nothing else changes). Read through lang.resolve_lang; kept in sync
+    # by every write path. `title` stays flat (English); `title_el` remains
+    # the dedicated Greek-title column. See lang.py for the whole model.
+    description_i18n = Column(JSONType)
     # Position of the lesson within its (cefr_level, skill_area) section. Lower =
     # earlier/more fundamental. Drives the skill-tree sequence and the strict
     # unlock (next lesson opens only after the previous is passed). Nullable until
@@ -126,6 +132,10 @@ class UserProgress(Base):
     maritime_level = Column(String)  # none | basic | proficient
     # Onboarding role choice; NULL until chosen in onboarding.
     user_role = Column(String)  # engineer | deck | undecided
+    # Which language the user reads explanations in (ISO 639-1). Only "el"
+    # exists today; the column is here so serializers already resolve through
+    # it and a future language needs no schema change. No UI sets it yet.
+    explanation_language = Column(String, nullable=False, server_default="el")
 
 
 class UserLessonCompletion(Base):

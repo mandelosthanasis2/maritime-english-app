@@ -23,6 +23,8 @@ import {
   TRACKS,
   TRACK_LABEL,
   itemKind,
+  elText,
+  resolveItemForPreview,
 } from './constants.js'
 
 const PAGE_SIZE = 20
@@ -43,7 +45,8 @@ function kindCounts(items) {
 
 function itemSnippet(item) {
   const english = item.data?.english || {}
-  return english.text || english.scenario || english.gap_text || item.item_id
+  // scenario may be language-keyed ({el: ...}) — email writing tasks.
+  return english.text || elText(english.scenario) || english.gap_text || item.item_id
 }
 
 // Pending-work overview: totals + per-section (level · skill) chips.
@@ -167,7 +170,7 @@ function ReviewItemRow({ item, moveTargets, canApprove, onApproved, onRemoved, o
       {open === 'preview' && (
         <div className="rq-preview">
           <p className="rq-preview__label">👁 Όπως θα το δει ο χρήστης:</p>
-          <LessonItem item={item} onAnswered={noop} onResult={noop} />
+          <LessonItem item={resolveItemForPreview(item)} onAnswered={noop} onResult={noop} />
         </div>
       )}
       {open === 'edit' && (

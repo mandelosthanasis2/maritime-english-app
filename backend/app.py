@@ -33,6 +33,7 @@ from adaptive import choose_next, choose_next_lesson
 from auth import ADMIN_API_KEY_HEADER, AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
 from email_feedback import EmailFeedbackError, generate_feedback as email_feedback
+from lang import DEFAULT_LANG, normalize_item_data, resolve_item_data, resolve_lang
 from rate_limit import RateLimiter
 from models import (
     ApiUsageLog,
@@ -200,7 +201,35 @@ except Exception as exc:  # pragma: no cover - startup best effort
 # --- Serialization helpers ---------------------------------------------------
 
 
-def serialize_lesson_meta(lesson, item_count, writing_practice=False, gradable_count=None):
+def _user_lang(session, user_id):
+    """The user's explanation language ('el' when unset/unknown). Never raises."""
+    try:
+        progress = session.get(UserProgress, user_id)
+        if progress and progress.explanation_language:
+            return progress.explanation_language
+    except Exception:  # pragma: no cover - preference lookup is best-effort
+        pass
+    return DEFAULT_LANG
+
+
+def request_lang(session):
+    """Explanation language for THIS request.
+
+    The stored preference when a valid session token is attached, else the
+    default 'el'. Content endpoints are public, so this never raises and
+    never requires a token — an anonymous (or token-less) fetch simply gets
+    Greek, which is today's only language anyway.
+    """
+    try:
+        user_id, _email = verify_request(request)
+    except Exception:
+        return DEFAULT_LANG
+    return _user_lang(session, user_id)
+
+
+def serialize_lesson_meta(
+    lesson, item_count, writing_practice=False, gradable_count=None, lang=DEFAULT_LANG
+):
     """Lesson metadata only (no items).
 
     `writing_practice` is True for email-track lessons that hold an email_compose
@@ -225,7 +254,10 @@ def serialize_lesson_meta(lesson, item_count, writing_practice=False, gradable_c
         "order_index": lesson.order_index,
         "module": lesson.module,
         "title": lesson.title,
-        "description": lesson.description,
+        # Language-keyed when available (lang.py); the flat column is the
+        # fallback so legacy rows keep working. The client receives a plain
+        # string either way, exactly as before.
+        "description": resolve_lang(lesson.description_i18n, lang) or lesson.description,
         "source": lesson.source,
         "interface_language": lesson.interface_language,
         "target_language": lesson.target_language,
@@ -236,8 +268,11 @@ def serialize_lesson_meta(lesson, item_count, writing_practice=False, gradable_c
     }
 
 
-def serialize_item(item):
-    """A single item: identifying columns plus its full rich `data` object."""
+def serialize_item(item, lang=DEFAULT_LANG):
+    """A single item for LEARNERS: columns plus its `data` with the language
+    layer resolved to plain strings/`explanations.el` exactly as the frontend
+    has always consumed it (see lang.resolve_item_data). Admin endpoints use
+    serialize_admin_item, which returns the raw language-keyed objects."""
     return {
         "item_id": item.item_id,
         "type": item.type,
@@ -245,7 +280,7 @@ def serialize_item(item):
         "difficulty": item.difficulty,
         "status": item.status,
         "skill_type": item.skill_type,
-        "data": item.data,
+        "data": resolve_item_data(item.data, lang),
     }
 
 
@@ -512,6 +547,7 @@ def list_lessons():
             .order_by(Lesson.lesson_id)
             .all()
         )
+        lang = request_lang(session)
         return jsonify(
             [
                 serialize_lesson_meta(
@@ -519,6 +555,7 @@ def list_lessons():
                     counts.get(l.lesson_id, 0),
                     l.lesson_id in writing_ids,
                     gradable.get(l.lesson_id, 0),
+                    lang=lang,
                 )
                 for l in lessons
             ]
@@ -543,8 +580,9 @@ def get_lesson(lesson_id):
             )
         # Only approved items are served to learners.
         approved_items = [i for i in lesson.items if i.status == "approved"]
-        payload = serialize_lesson_meta(lesson, len(approved_items))
-        payload["items"] = [serialize_item(item) for item in approved_items]
+        lang = request_lang(session)
+        payload = serialize_lesson_meta(lesson, len(approved_items), lang=lang)
+        payload["items"] = [serialize_item(item, lang) for item in approved_items]
         return jsonify(payload)
     finally:
         session.close()
@@ -561,8 +599,9 @@ def list_lessons_by_track(track):
             .order_by(Lesson.lesson_id)
             .all()
         )
+        lang = request_lang(session)
         return jsonify(
-            [serialize_lesson_meta(l, counts.get(l.lesson_id, 0)) for l in lessons]
+            [serialize_lesson_meta(l, counts.get(l.lesson_id, 0), lang=lang) for l in lessons]
         )
     finally:
         session.close()
@@ -1004,12 +1043,13 @@ def section_test(cefr_level, skill_area):
             )
         sample = random.sample(pool, min(TEST_TARGET_ITEMS, len(pool)))
         random.shuffle(sample)
+        lang = request_lang(session)
         return jsonify(
             {
                 "cefr_level": cefr_level,
                 "skill_area": skill_area,
                 "available": len(pool),
-                "items": [serialize_item(item) for item in sample],
+                "items": [serialize_item(item, lang) for item in sample],
             }
         )
     finally:
@@ -1105,11 +1145,12 @@ def level_test(cefr_level):
                 404,
             )
         sample = balanced_sample(list(by_skill.values()), TEST_TARGET_ITEMS)
+        lang = request_lang(session)
         return jsonify(
             {
                 "cefr_level": cefr_level,
                 "available": total,
-                "items": [serialize_item(item) for item in sample],
+                "items": [serialize_item(item, lang) for item in sample],
             }
         )
     finally:
@@ -1310,7 +1351,7 @@ def next_exercise():
             )
 
         item, track, meta = choice
-        payload = serialize_item(item)
+        payload = serialize_item(item, progress.explanation_language or DEFAULT_LANG)
         payload["lesson_id"] = item.lesson_id
         return jsonify({"item": payload, "track": track, "meta": meta})
     except Exception:  # pragma: no cover - unexpected failure
@@ -1361,7 +1402,9 @@ def next_lesson():
 
         lesson, reason_el, meta = choice
         payload = serialize_lesson_meta(
-            lesson, len(items_by_lesson.get(lesson.lesson_id, []))
+            lesson,
+            len(items_by_lesson.get(lesson.lesson_id, [])),
+            lang=progress.explanation_language or DEFAULT_LANG,
         )
         payload["title_el"] = lesson.title_el
         return jsonify({"lesson": payload, "reason_el": reason_el, "meta": meta})
@@ -1554,6 +1597,9 @@ def store_generated_item(session, raw, lesson_id, track, fallback_difficulty, or
     data.pop("audio_url", None)
     if track:
         data["track"] = track
+    # Multi-language readiness: whatever shape the generator (or an admin)
+    # sent, language-bearing flat strings are stored language-keyed ({"el": …}).
+    data, _changed = normalize_item_data(data)
 
     item_type = data.get("type") or data.get("skill_type") or "vocabulary"
     skill_type = data.get("skill_type") or _SKILL_TYPE_FROM_TYPE.get(item_type, item_type)
@@ -1697,6 +1743,13 @@ def admin_generate_items():
                     title=entry["title_en"],
                     title_el=entry.get("title_el"),
                     description=entry.get("description_el"),
+                    # Keyed sibling of `description` (lang.py): kept in sync so
+                    # new lessons never accumulate Greek-only descriptions.
+                    description_i18n=(
+                        {DEFAULT_LANG: entry["description_el"]}
+                        if entry.get("description_el")
+                        else None
+                    ),
                     interface_language="el",
                     target_language="en",
                     version=1,
@@ -2030,7 +2083,8 @@ def admin_edit_item(item_id):
         if "data" in payload:
             if not isinstance(payload["data"], dict):
                 return jsonify({"error": "data must be an object."}), 400
-            item.data = payload["data"]
+            # Accept both shapes; store language-keyed (see lang.py).
+            item.data, _changed = normalize_item_data(payload["data"])
         if "lesson_id" in payload:
             target = (
                 session.query(Lesson)
@@ -3739,6 +3793,11 @@ def admin_edit_lesson(lesson_id):
             lesson.title_el = payload["title_el"]
         if "description" in payload:
             lesson.description = payload["description"]
+            # The admin edits the Greek text; keep the language-keyed sibling
+            # in sync without dropping any other language's entry.
+            i18n = dict(lesson.description_i18n or {})
+            i18n[DEFAULT_LANG] = payload["description"]
+            lesson.description_i18n = i18n
         if "source" in payload:
             lesson.source = payload["source"]
         if "track" in payload:

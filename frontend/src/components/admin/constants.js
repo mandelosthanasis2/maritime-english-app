@@ -39,3 +39,35 @@ export const KINDS = [
 export function itemKind(item) {
   return (item.skill_type || item.type || '').toLowerCase()
 }
+
+// A language-keyed admin value ({el: '...'} — see backend/lang.py) or a legacy
+// flat string -> the Greek text for display in the admin inputs.
+export function elText(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value.el ?? Object.values(value)[0] ?? ''
+  }
+  return value ?? ''
+}
+
+// Admin endpoints return RAW language-keyed data; the learner preview
+// (LessonItem) expects the resolved strings the user API serves. Resolve the
+// two keyed english fields (email writing tasks) for preview rendering —
+// flat strings pass through untouched.
+export function resolveItemForPreview(item) {
+  const data = item?.data || {}
+  const english = data.english
+  if (!english || (typeof english.scenario !== 'object' && typeof english.instructions !== 'object')) {
+    return item
+  }
+  return {
+    ...item,
+    data: {
+      ...data,
+      english: {
+        ...english,
+        ...(english.scenario !== undefined ? { scenario: elText(english.scenario) } : {}),
+        ...(english.instructions !== undefined ? { instructions: elText(english.instructions) } : {}),
+      },
+    },
+  }
+}

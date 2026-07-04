@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { adminDeleteItem, adminEditItem } from '../../api.js'
-import { DIFFICULTIES, SKILL_TYPES } from './constants.js'
+import { DIFFICULTIES, SKILL_TYPES, elText } from './constants.js'
 
 // Inline editor for a single draft item (moved from the old single-page
 // Admin.jsx — same fields and behaviour). Callbacks:
@@ -12,7 +12,9 @@ export default function ItemEditor({ item, moveTargets, onError, onSaved, onRemo
   const english = data.english || {}
   const el = (data.explanations && data.explanations.el) || {}
 
-  const [text, setText] = useState(english.text ?? english.scenario ?? '')
+  // english.scenario is language-keyed ({el: …}) on email items and a flat
+  // English string on dialogue items — elText handles both.
+  const [text, setText] = useState(english.text ?? elText(english.scenario))
   const [translation, setTranslation] = useState(el.translation ?? '')
   const [note, setNote] = useState(el.note ?? '')
   const [difficulty, setDifficulty] = useState(item.difficulty || 'B1')
@@ -32,8 +34,18 @@ export default function ItemEditor({ item, moveTargets, onError, onSaved, onRemo
       throw new Error(`Μη έγκυρο JSON στο item ${item.item_id}.`)
     }
     nextData.english = nextData.english || {}
-    if (english.scenario !== undefined) nextData.english.scenario = text
-    else nextData.english.text = text
+    if (english.scenario !== undefined) {
+      // Language-keyed scenarios (email items) get the edit written back into
+      // the 'el' key, keeping any other languages; flat English scenarios
+      // (dialogue items) stay flat strings.
+      const current = nextData.english.scenario
+      nextData.english.scenario =
+        current && typeof current === 'object' && !Array.isArray(current)
+          ? { ...current, el: text }
+          : text
+    } else {
+      nextData.english.text = text
+    }
     nextData.explanations = nextData.explanations || {}
     nextData.explanations.el = { ...(nextData.explanations.el || {}), translation, note }
     nextData.difficulty = difficulty
