@@ -372,6 +372,20 @@ export function adminStructureOverview() {
   return adminRequest('/api/admin/structure-overview')
 }
 
+// Beta health summary + paginated user list for the Users tab.
+// sort: last_active | xp | created. q: email substring filter.
+export function adminUsers({ sort = 'last_active', q = '', offset = 0, limit = 25 } = {}) {
+  const params = new URLSearchParams({ sort, offset: String(offset), limit: String(limit) })
+  if (q) params.set('q', q)
+  return adminRequest(`/api/admin/users?${params.toString()}`)
+}
+
+// Read-only drill-down for one user: journey, activity sparkline, placement,
+// and where they struggle.
+export function adminUserDetail(userId) {
+  return adminRequest(`/api/admin/users/${encodeURIComponent(userId)}`)
+}
+
 export function adminAutoCategorize() {
   return adminRequest('/api/admin/auto-categorize', { method: 'POST' })
 }

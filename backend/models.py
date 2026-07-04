@@ -114,6 +114,11 @@ class UserProgress(Base):
     total_xp = Column(Integer, nullable=False, default=0)
     current_streak = Column(Integer, nullable=False, default=0)
     last_active_date = Column(Date)
+    # When the progress row was first created — the closest thing we have to a
+    # signup date (the row is created on the user's first authenticated call).
+    # NULL for accounts that predate the column when no backfill source existed
+    # (see migrate.py); retention cohorts skip NULL rows.
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     # Placement test results; NULL until the user takes the placement.
     cefr_level = Column(String)  # A1 | A2 | B1 | B2 | C1
     maritime_level = Column(String)  # none | basic | proficient
@@ -163,6 +168,29 @@ class UserItemStat(Base):
     wrong_count = Column(Integer, nullable=False, default=0)
     last_correct = Column(Boolean)  # outcome of the most recent attempt
     last_answered_at = Column(DateTime(timezone=True))  # for spaced repetition
+
+
+class UserActivityDay(Base):
+    """One row per (user, day): a tiny daily activity rollup for beta metrics.
+
+    `activity_date` is the user's LOCAL day (Europe/Athens — the app's
+    audience), not UTC. A row means "this user did something that day" (opened
+    the app with a valid session, answered, or completed a lesson); `answers`
+    counts smart-practice/lesson answers recorded that day. Written from
+    get_or_create_progress / record_answer, read only by the admin Users tab
+    (actives, retention cohorts, per-user 14-day sparkline). Per-attempt
+    detail is intentionally NOT kept — one row per day is enough.
+    """
+
+    __tablename__ = "user_activity_days"
+    __table_args__ = (
+        UniqueConstraint("user_id", "activity_date", name="uq_user_activity_day"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    activity_date = Column(Date, nullable=False, index=True)
+    answers = Column(Integer, nullable=False, default=0)
 
 
 class UserSectionTest(Base):

@@ -1,6 +1,7 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import LevelsTab from '../components/admin/LevelsTab.jsx'
 import ReviewTab from '../components/admin/ReviewTab.jsx'
+import UsersTab from '../components/admin/UsersTab.jsx'
 
 // The admin dashboard: a mobile-first tabbed shell. Each tab loads its own
 // data through the admin-only endpoints; a 401/403 from any of them sends the
@@ -54,7 +55,7 @@ export default function Admin() {
 
       {tab === 'review' && <ReviewTab onAuthFail={onAuthFail} />}
       {tab === 'levels' && <LevelsTab onAuthFail={onAuthFail} />}
-      {tab === 'users' && <ComingSoon icon="👥" title="Χρήστες" />}
+      {tab === 'users' && <UsersTab onAuthFail={onAuthFail} />}
       {tab === 'costs' && <ComingSoon icon="💰" title="Κόστη" />}
     </div>
   )
