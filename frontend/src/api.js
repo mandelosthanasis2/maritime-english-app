@@ -386,6 +386,12 @@ export function adminUserDetail(userId) {
   return adminRequest(`/api/admin/users/${encodeURIComponent(userId)}`)
 }
 
+// Estimated external-API spend for the 💰 tab. All figures are estimates
+// computed at log time from list prices (backend/usage.py) — not billing data.
+export function adminCosts({ days = 14 } = {}) {
+  return adminRequest(`/api/admin/costs?days=${days}`)
+}
+
 export function adminAutoCategorize() {
   return adminRequest('/api/admin/auto-categorize', { method: 'POST' })
 }

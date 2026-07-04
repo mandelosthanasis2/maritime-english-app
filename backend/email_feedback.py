@@ -11,6 +11,8 @@ import json
 import logging
 import os
 
+from usage import log_usage, token_usage
+
 logger = logging.getLogger(__name__)
 
 # Use the latest, most capable Claude model (same as roleplay/generation).
@@ -62,7 +64,7 @@ class EmailFeedbackError(Exception):
         self.status_code = status_code
 
 
-def generate_feedback(scenario, instructions, email_text):
+def generate_feedback(scenario, instructions, email_text, user_id=None):
     """Return {"good": str, "improve": str, "suggestion": str} for one email.
 
     `scenario` and `instructions` are the (Greek) task the learner was given;
@@ -117,6 +119,17 @@ def generate_feedback(scenario, instructions, email_text):
         raise EmailFeedbackError(
             "Ο AI βοηθός δεν είναι διαθέσιμος αυτή τη στιγμή. Δοκίμασε ξανά.", 502
         ) from exc
+
+    # Log right after the API call: the tokens are billed even if the reply
+    # below turns out to be unparseable.
+    input_tokens, output_tokens = token_usage(response)
+    log_usage(
+        provider="claude",
+        endpoint="email_feedback",
+        units=input_tokens + output_tokens,
+        user_id=user_id,
+        details={"input_tokens": input_tokens, "output_tokens": output_tokens, "model": MODEL},
+    )
 
     text = next((b.text for b in response.content if b.type == "text"), "")
     try:

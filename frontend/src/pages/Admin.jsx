@@ -1,4 +1,5 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import CostsTab from '../components/admin/CostsTab.jsx'
 import LevelsTab from '../components/admin/LevelsTab.jsx'
 import ReviewTab from '../components/admin/ReviewTab.jsx'
 import UsersTab from '../components/admin/UsersTab.jsx'
@@ -14,16 +15,6 @@ const TABS = [
   { key: 'users', icon: '👥', label: 'Χρήστες' },
   { key: 'costs', icon: '💰', label: 'Κόστη' },
 ]
-
-function ComingSoon({ icon, title }) {
-  return (
-    <div className="admin-panel admin-soon">
-      <span className="admin-soon__icon" aria-hidden="true">{icon}</span>
-      <h2 className="admin-panel__title">{title}</h2>
-      <p className="admin-hint">Έρχεται σύντομα.</p>
-    </div>
-  )
-}
 
 export default function Admin() {
   const navigate = useNavigate()
@@ -56,7 +47,7 @@ export default function Admin() {
       {tab === 'review' && <ReviewTab onAuthFail={onAuthFail} />}
       {tab === 'levels' && <LevelsTab onAuthFail={onAuthFail} />}
       {tab === 'users' && <UsersTab onAuthFail={onAuthFail} />}
-      {tab === 'costs' && <ComingSoon icon="💰" title="Κόστη" />}
+      {tab === 'costs' && <CostsTab onAuthFail={onAuthFail} />}
     </div>
   )
 }

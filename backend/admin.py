@@ -471,6 +471,7 @@ def _generate_chunk_lessons(chunk, kind, known_titles):
     try:
         text = ai_text.generate_text(
             system=SYSTEM_PROMPT,
+            usage_endpoint="generate_items",
             messages=[
                 {"role": "user", "content": _chunk_user_prompt(chunk, kind, known_titles)}
             ],
@@ -658,6 +659,7 @@ def auto_categorize_lessons(lessons_payload):
         try:
             text = ai_text.generate_text(
                 system=AUTO_CATEGORIZE_SYSTEM_PROMPT,
+                usage_endpoint="auto_categorize",
                 messages=[
                     {"role": "user", "content": json.dumps(batch, ensure_ascii=False)}
                 ],
@@ -752,6 +754,7 @@ def generate_teaching_for_lesson(title, track, digest):
     try:
         text = ai_text.generate_text(
             system=TEACHING_SYSTEM_PROMPT,
+            usage_endpoint="generate_teaching",
             messages=[{"role": "user", "content": user_prompt}],
             max_tokens=4000,
             effort="medium",
@@ -902,6 +905,7 @@ def generate_enrichment_items(title, track, role_category, digest, needed):
     try:
         text = ai_text.generate_text(
             system=ENRICH_SYSTEM_PROMPT,
+            usage_endpoint="enrich",
             messages=[{"role": "user", "content": user_prompt}],
             max_tokens=12000,
             effort="medium",
@@ -977,6 +981,7 @@ def generate_email_scenarios(topic, count):
     try:
         text = ai_text.generate_text(
             system=EMAIL_SCENARIO_SYSTEM_PROMPT,
+            usage_endpoint="email_scenarios",
             messages=[{"role": "user", "content": user_prompt}],
             max_tokens=4000,
             effort="medium",

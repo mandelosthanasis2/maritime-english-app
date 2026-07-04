@@ -26,6 +26,8 @@ the existing prompts / JSON parsing are reused unchanged.
 import logging
 import os
 
+from usage import log_usage, token_usage
+
 logger = logging.getLogger(__name__)
 
 # Claude side (unchanged from the previous hard-coded value in admin.py).
@@ -108,12 +110,15 @@ def _client_and_request(anthropic, provider, effort):
     return client, CLAUDE_MODEL, extra
 
 
-def generate_text(*, system, messages, max_tokens, effort="medium", timeout=None):
+def generate_text(*, system, messages, max_tokens, effort="medium", timeout=None,
+                  usage_endpoint="generate"):
     """Generate text with the configured provider, falling back to the other.
 
     Returns the concatenated text of the response (same as the callers used to
     build inline). Raises AITextNotConfigured if nothing is configured, or
-    AITextError if every configured provider failed.
+    AITextError if every configured provider failed. `usage_endpoint` labels
+    the call in the api_usage_log (💰 admin tab) — e.g. "generate_items",
+    "enrich"; the provider logged is the one that actually served the call.
     """
     try:
         import anthropic
@@ -139,6 +144,18 @@ def generate_text(*, system, messages, max_tokens, effort="medium", timeout=None
             if timeout is not None:
                 kwargs["timeout"] = timeout
             response = client.messages.create(**kwargs)
+            # Content generation is admin-triggered, so no user_id on the row.
+            input_tokens, output_tokens = token_usage(response)
+            log_usage(
+                provider=provider,
+                endpoint=usage_endpoint,
+                units=input_tokens + output_tokens,
+                details={
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "model": model,
+                },
+            )
             return "".join(b.text for b in response.content if b.type == "text")
         except Exception as exc:  # anthropic.APIError, timeouts, etc.
             last_exc = exc

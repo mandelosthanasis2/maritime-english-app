@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import and_, case, func, or_, text as sql_text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from admin import (
@@ -35,6 +35,7 @@ from db import SessionLocal, init_db
 from email_feedback import EmailFeedbackError, generate_feedback as email_feedback
 from rate_limit import RateLimiter
 from models import (
+    ApiUsageLog,
     Item,
     Lesson,
     UserActivityDay,
@@ -596,7 +597,7 @@ def assess_pronunciation_route():
         )
 
     try:
-        result = assess_pronunciation(audio_bytes, reference_text)
+        result = assess_pronunciation(audio_bytes, reference_text, user_id=user_id)
         return jsonify(result)
     except PronunciationError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
@@ -632,7 +633,7 @@ def transcribe_route():
         )
 
     try:
-        return jsonify(transcribe(audio_bytes))
+        return jsonify(transcribe(audio_bytes, user_id=user_id))
     except PronunciationError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
     except Exception:  # pragma: no cover - unexpected failure
@@ -653,7 +654,7 @@ def tts_route():
 
     payload = request.get_json(silent=True) or {}
     try:
-        audio = synthesize_speech(payload.get("text", ""))
+        audio = synthesize_speech(payload.get("text", ""), user_id=user_id)
         return Response(audio, mimetype="audio/mpeg")
     except PronunciationError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
@@ -681,6 +682,7 @@ def roleplay_chat_route():
             user_role=payload.get("user_role", ""),
             history=payload.get("history", []),
             user_message=payload.get("user_message", ""),
+            user_id=user_id,
         )
         return jsonify(result)
     except RoleplayError as exc:
@@ -713,6 +715,7 @@ def email_feedback_route():
             scenario=payload.get("scenario", ""),
             instructions=payload.get("instructions", ""),
             email_text=payload.get("email_text", ""),
+            user_id=user_id,
         )
         return jsonify(result)
     except EmailFeedbackError as exc:
@@ -2873,6 +2876,200 @@ def admin_user_detail(user_id):
                     "wrong": int(wrong_total),
                 },
                 "stuck": {"most_wrong": most_wrong, "last_attempted": last_attempted},
+            }
+        )
+    finally:
+        session.close()
+
+
+# --- Admin: costs (💰) ---------------------------------------------------------
+
+# The 💰 tab groups the five logged providers into the three spend buckets the
+# admin thinks in: Azure Speech vs AI text (DeepSeek) vs AI chat (Claude). A
+# generation call that fell back to Claude is logged as claude — it lands in
+# the Claude bucket because that's where the money actually went.
+_PROVIDER_GROUP = {
+    "azure_tts": "azure_speech",
+    "azure_stt": "azure_speech",
+    "azure_pronunciation": "azure_speech",
+    "deepseek": "deepseek",
+    "claude": "claude",
+}
+_COST_GROUPS = ("azure_speech", "deepseek", "claude")
+
+
+def _athens_midnight_utc(day):
+    """The UTC instant when the Athens calendar day `day` starts."""
+    return datetime(day.year, day.month, day.day, tzinfo=ATHENS_TZ).astimezone(timezone.utc)
+
+
+def _athens_day_expr(session, column):
+    """SQL expression bucketing a UTC timestamp column by Athens calendar day.
+
+    Shifts by the CURRENT Athens UTC offset, so days right around a DST switch
+    inside the chart window can land one bucket off — fine for a cost estimate
+    chart. (On PostgreSQL the final date() uses the session timezone, UTC on
+    Railway, which after the shift IS the Athens date.)
+    """
+    minutes = int(datetime.now(timezone.utc).astimezone(ATHENS_TZ).utcoffset().total_seconds() // 60)
+    if session.get_bind().dialect.name == "postgresql":
+        return func.date(column + sql_text(f"interval '{minutes} minutes'"))
+    return func.date(column, f"{minutes:+d} minutes")
+
+
+def _cost_float(value):
+    """SUM(est_cost_usd) comes back as Decimal (PostgreSQL) or float — JSON-safe."""
+    return round(float(value or 0), 6)
+
+
+@app.route("/api/admin/costs", methods=["GET"])
+def admin_costs():
+    """Estimated external-API spend for the 💰 tab, aggregated in SQL.
+
+    Query params: days=<chart window, 1..90, default 14>. Everything reads the
+    api_usage_log rollup on the fly (no cron): today's and this month's totals
+    (Athens calendar), the month split by provider group, a per-day chart for
+    the window, top spenders this month plus the admin/system row (user_id
+    NULL), and a per-endpoint breakdown. All figures are ESTIMATES from
+    usage.PRICING list prices — exact amounts live in the provider consoles.
+    """
+    try:
+        verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    try:
+        days = min(90, max(1, int(request.args.get("days", 14))))
+    except (TypeError, ValueError):
+        days = 14
+
+    today = athens_date()
+    today_start = _athens_midnight_utc(today)
+    month_start = _athens_midnight_utc(today.replace(day=1))
+    chart_start_day = today - timedelta(days=days - 1)
+    chart_start = _athens_midnight_utc(chart_start_day)
+
+    session = SessionLocal()
+    try:
+        cost_sum = func.sum(ApiUsageLog.est_cost_usd)
+        calls = func.count(ApiUsageLog.id)
+
+        today_cost, today_calls = (
+            session.query(cost_sum, calls).filter(ApiUsageLog.ts >= today_start).one()
+        )
+        month_cost, month_calls = (
+            session.query(cost_sum, calls).filter(ApiUsageLog.ts >= month_start).one()
+        )
+
+        # This month, split by provider — folded into the three UI groups.
+        groups = {g: {"cost": 0.0, "calls": 0} for g in _COST_GROUPS}
+        rows = (
+            session.query(ApiUsageLog.provider, cost_sum, calls)
+            .filter(ApiUsageLog.ts >= month_start)
+            .group_by(ApiUsageLog.provider)
+            .all()
+        )
+        for provider, cost, count in rows:
+            group = groups.get(_PROVIDER_GROUP.get(provider))
+            if group is not None:
+                group["cost"] = round(group["cost"] + _cost_float(cost), 6)
+                group["calls"] += int(count)
+
+        # Daily chart: one row per (Athens day, provider), zero-filled so the
+        # frontend always renders exactly `days` bars.
+        day_expr = _athens_day_expr(session, ApiUsageLog.ts)
+        daily_rows = (
+            session.query(day_expr, ApiUsageLog.provider, cost_sum)
+            .filter(ApiUsageLog.ts >= chart_start)
+            .group_by(day_expr, ApiUsageLog.provider)
+            .all()
+        )
+        by_day = {}
+        for day_value, provider, cost in daily_rows:
+            key = str(day_value)  # date object on PostgreSQL, string on SQLite
+            bucket = by_day.setdefault(key, dict.fromkeys(_COST_GROUPS, 0.0))
+            group = _PROVIDER_GROUP.get(provider)
+            if group:
+                bucket[group] = round(bucket[group] + _cost_float(cost), 6)
+        daily = []
+        for i in range(days):
+            day = chart_start_day + timedelta(days=i)
+            bucket = by_day.get(day.isoformat(), dict.fromkeys(_COST_GROUPS, 0.0))
+            daily.append(
+                {
+                    "date": day.isoformat(),
+                    **bucket,
+                    "total": round(sum(bucket.values()), 6),
+                }
+            )
+
+        # Top spenders this month. The NULL user_id bucket (admin/Hermes calls)
+        # is reported separately as the "system" row.
+        top_rows = (
+            session.query(ApiUsageLog.user_id, cost_sum, calls)
+            .filter(ApiUsageLog.ts >= month_start, ApiUsageLog.user_id.isnot(None))
+            .group_by(ApiUsageLog.user_id)
+            .order_by(cost_sum.desc())
+            .limit(5)
+            .all()
+        )
+        emails = {}
+        if top_rows:
+            emails = dict(
+                session.query(UserProgress.user_id, UserProgress.email)
+                .filter(UserProgress.user_id.in_([uid for uid, _c, _n in top_rows]))
+                .all()
+            )
+        top_users = [
+            {
+                "user_id": uid,
+                "email": emails.get(uid),
+                "cost": _cost_float(cost),
+                "calls": int(count),
+            }
+            for uid, cost, count in top_rows
+        ]
+        system_cost, system_calls = (
+            session.query(cost_sum, calls)
+            .filter(ApiUsageLog.ts >= month_start, ApiUsageLog.user_id.is_(None))
+            .one()
+        )
+
+        # Per-endpoint breakdown, this month.
+        endpoint_rows = (
+            session.query(
+                ApiUsageLog.provider,
+                ApiUsageLog.endpoint,
+                calls,
+                func.sum(ApiUsageLog.units),
+                cost_sum,
+            )
+            .filter(ApiUsageLog.ts >= month_start)
+            .group_by(ApiUsageLog.provider, ApiUsageLog.endpoint)
+            .order_by(cost_sum.desc())
+            .all()
+        )
+        endpoints = [
+            {
+                "provider": provider,
+                "endpoint": endpoint,
+                "calls": int(count),
+                "units": int(units or 0),
+                "cost": _cost_float(cost),
+            }
+            for provider, endpoint, count, units, cost in endpoint_rows
+        ]
+
+        return jsonify(
+            {
+                "days": days,
+                "today": {"cost": _cost_float(today_cost), "calls": int(today_calls)},
+                "month": {"cost": _cost_float(month_cost), "calls": int(month_calls)},
+                "month_groups": groups,
+                "daily": daily,
+                "top_users": top_users,
+                "system": {"cost": _cost_float(system_cost), "calls": int(system_calls)},
+                "endpoints": endpoints,
             }
         )
     finally:

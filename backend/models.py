@@ -13,7 +13,9 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -191,6 +193,32 @@ class UserActivityDay(Base):
     user_id = Column(String, nullable=False, index=True)
     activity_date = Column(Date, nullable=False, index=True)
     answers = Column(Integer, nullable=False, default=0)
+
+
+class ApiUsageLog(Base):
+    """One row per paid external API call — feeds the admin 💰 Costs tab.
+
+    Written best-effort by usage.log_usage() at each call site (Azure Speech,
+    DeepSeek, Claude); a failed write never breaks the user's request. `units`
+    is provider-specific (TTS characters, audio seconds, AI tokens) and
+    `est_cost_usd` is an ESTIMATE computed at write time from usage.PRICING —
+    exact amounts live in the provider consoles. `user_id` is NULL for
+    admin/system calls (Hermes content generation). Read only by the admin
+    costs endpoint, which aggregates in SQL; rollups happen on read (no cron).
+    """
+
+    __tablename__ = "api_usage_log"
+    __table_args__ = (Index("ix_api_usage_user_ts", "user_id", "ts"),)
+
+    id = Column(Integer, primary_key=True)
+    ts = Column(DateTime(timezone=True), nullable=False, index=True, server_default=func.now())
+    user_id = Column(String)  # Supabase user id; NULL = admin/system call
+    provider = Column(String, nullable=False)  # azure_tts | azure_stt | azure_pronunciation | deepseek | claude
+    endpoint = Column(String, nullable=False)  # short label: tts | transcribe | roleplay | enrich | ...
+    units = Column(Integer, nullable=False, default=0)
+    est_cost_usd = Column(Numeric(14, 8), nullable=False, default=0)
+    # Optional extras, e.g. {"input_tokens": ..., "output_tokens": ..., "model": ...}.
+    details = Column(JSONType)
 
 
 class UserSectionTest(Base):

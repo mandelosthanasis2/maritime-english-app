@@ -4518,16 +4518,6 @@ textarea {
   color: var(--teal);
 }
 
-/* Placeholder tabs (Users / Costs — PR B/C). */
-.admin-soon {
-  align-items: center;
-  text-align: center;
-  padding: 2.4rem 1.2rem;
-}
-.admin-soon__icon {
-  font-size: 2.4rem;
-}
-
 /* --- 📥 Content Review ------------------------------------------------- */
 
 .rq {
@@ -5124,4 +5114,132 @@ textarea {
 .ut-lesson-chip--fail {
   border-color: var(--amber-border);
   background: var(--amber-bg);
+}
+
+/* --- 💰 Costs (Κόστη) ---------------------------------------------------- */
+
+.ct {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+/* Two big totals side by side; the three provider-group cards reuse .ut-stat. */
+.ct-totals {
+  grid-template-columns: 1fr 1fr;
+}
+@media (min-width: 640px) {
+  .ct-groups {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Stacked daily bar chart (pure divs — same approach as the Users sparkline). */
+.ct-chart__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 6rem;
+}
+.ct-chart__slot {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column-reverse; /* segments stack bottom-up */
+  justify-content: flex-start;
+}
+.ct-chart__seg {
+  width: 100%;
+  min-height: 2px;
+}
+.ct-chart__slot .ct-chart__seg:last-child {
+  border-radius: 3px 3px 0 0; /* top segment gets the rounded cap */
+}
+.ct-chart__seg--zero {
+  background: var(--border);
+  height: 3px;
+}
+.ct-chart__axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted, #9db4c3);
+  margin-top: 0.25rem;
+}
+.ct-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+}
+.ct-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.ct-legend__dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.ct-users {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ct-users__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.ct-users__row:last-child {
+  border-bottom: none;
+}
+.ct-users__who {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ct-users__row--system .ct-users__who {
+  color: var(--muted, #9db4c3);
+}
+.ct-users__nums {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Per-endpoint breakdown: the table scrolls inside its wrapper on phones. */
+.ct-table-wrap {
+  overflow-x: auto;
+}
+.ct-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.ct-table th,
+.ct-table td {
+  text-align: left;
+  padding: 0.45rem 0.6rem 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ct-table th {
+  font-weight: 600;
+  color: var(--muted, #9db4c3);
+}
+.ct-table__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ct-disclaimer {
+  text-align: center;
 }
