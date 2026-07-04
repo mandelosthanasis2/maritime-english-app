@@ -1,4 +1,5 @@
 import logging
+import os
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -55,10 +56,38 @@ from roleplay import RoleplayError, chat as roleplay_chat
 from transcription import transcribe
 from tts import synthesize as synthesize_speech
 
+def _env_int(name, default):
+    """An integer env var, falling back to `default` when unset/invalid."""
+    try:
+        return int(os.environ.get(name, "") or default)
+    except (TypeError, ValueError):
+        return default
+
+
 # Rate limit for the expensive admin generation endpoint (per caller). Generous
 # enough never to bother a human admin in the /admin UI, but it caps a headless
 # agent's Claude usage. See rate_limit.py for the per-process caveat.
 _GENERATE_LIMITER = RateLimiter(max_calls=10, period=60)
+
+# Per-user rate limits for the endpoints that trigger paid external API calls
+# (Azure Speech, Claude). Defaults are generous for a single human learner but
+# cap a scripted abuser. Per-process, like the admin limiter — a cheap safety
+# valve, not a cluster-wide guarantee (see rate_limit.py).
+_TTS_LIMITER = RateLimiter(_env_int("RATE_LIMIT_TTS_PER_MIN", 30), 60)
+# Microphone endpoints (pronunciation assessment + transcription) share a bucket.
+_SPEECH_LIMITER = RateLimiter(_env_int("RATE_LIMIT_SPEECH_PER_MIN", 15), 60)
+# Claude-backed chat endpoints (role-play + email feedback) share a bucket.
+_AI_CHAT_LIMITER = RateLimiter(_env_int("RATE_LIMIT_AI_CHAT_PER_MIN", 10), 60)
+
+
+def _rate_limited(limiter, key):
+    """A ready 429 response when `key` is over `limiter`'s budget, else None."""
+    allowed, retry_after = limiter.check(key)
+    if allowed:
+        return None
+    resp = jsonify({"error": "Πάρα πολλά αιτήματα. Δοκίμασε ξανά σε λίγο."})
+    resp.headers["Retry-After"] = str(retry_after)
+    return resp, 429
 
 
 def _admin_rate_key(request):
@@ -96,9 +125,56 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Allow the frontend (Vercel) to call the API from the browser. Open to all
-# origins for now; we'll lock this down later.
-CORS(app)
+
+def _cors_origins():
+    """Browser origins allowed to call the API, from CORS_ALLOWED_ORIGINS.
+
+    Comma-separated, e.g. "https://marlingo.app,https://myapp.vercel.app".
+    Unset -> local dev origins only (set the env var in production!). A single
+    "*" restores the old allow-all behaviour (not recommended).
+    """
+    raw = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+    origins = [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
+    if not origins:
+        logger.warning(
+            "CORS_ALLOWED_ORIGINS is not set — only local dev origins are "
+            "allowed. Set it to your frontend origin(s) in production."
+        )
+        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+    if "*" in origins:
+        logger.warning("CORS_ALLOWED_ORIGINS is '*' — API is open to all origins.")
+        return "*"
+    return origins
+
+
+# Allow only the configured frontend origin(s) to call the API from a browser.
+CORS(app, origins=_cors_origins())
+
+# Global request-size cap. Flask rejects bigger bodies with 413 before any
+# route code runs (handler below returns it as JSON). Audio uploads get a
+# tighter, dedicated cap checked in their routes.
+MAX_CONTENT_LENGTH_MB = _env_int("MAX_CONTENT_LENGTH_MB", 10)
+app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH_MB * 1024 * 1024
+
+MAX_AUDIO_UPLOAD_MB = _env_int("MAX_AUDIO_UPLOAD_MB", 5)
+MAX_AUDIO_UPLOAD_BYTES = MAX_AUDIO_UPLOAD_MB * 1024 * 1024
+
+# Placement submissions never legitimately exceed the test size (~10 questions).
+MAX_PLACEMENT_ANSWERS = 100
+
+
+@app.errorhandler(413)
+def payload_too_large(_exc):
+    return (
+        jsonify(
+            {
+                "error": (
+                    f"Το αίτημα είναι πολύ μεγάλο (όριο {MAX_CONTENT_LENGTH_MB} MB)."
+                )
+            }
+        ),
+        413,
+    )
 
 # Create tables on startup if they don't exist. Guarded so a database hiccup
 # never takes down the health check.
@@ -426,6 +502,15 @@ def list_lessons_by_track(track):
 
 @app.route("/api/assess-pronunciation", methods=["POST"])
 def assess_pronunciation_route():
+    # Auth + rate limit: every call costs an Azure Speech assessment.
+    try:
+        user_id, _email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    limited = _rate_limited(_SPEECH_LIMITER, f"speech:{user_id}")
+    if limited is not None:
+        return limited
+
     audio_file = request.files.get("audio")
     if audio_file is None:
         return jsonify({"error": "Missing 'audio' file."}), 400
@@ -435,6 +520,13 @@ def assess_pronunciation_route():
     audio_bytes = audio_file.read()
     if not audio_bytes:
         return jsonify({"error": "Uploaded audio is empty."}), 400
+    if len(audio_bytes) > MAX_AUDIO_UPLOAD_BYTES:
+        return (
+            jsonify(
+                {"error": f"Η ηχογράφηση είναι πολύ μεγάλη (όριο {MAX_AUDIO_UPLOAD_MB} MB)."}
+            ),
+            413,
+        )
 
     try:
         result = assess_pronunciation(audio_bytes, reference_text)
@@ -448,6 +540,15 @@ def assess_pronunciation_route():
 
 @app.route("/api/transcribe", methods=["POST"])
 def transcribe_route():
+    # Auth + rate limit: every call costs an Azure Speech transcription.
+    try:
+        user_id, _email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    limited = _rate_limited(_SPEECH_LIMITER, f"speech:{user_id}")
+    if limited is not None:
+        return limited
+
     audio_file = request.files.get("audio")
     if audio_file is None:
         return jsonify({"error": "Missing 'audio' file."}), 400
@@ -455,6 +556,13 @@ def transcribe_route():
     audio_bytes = audio_file.read()
     if not audio_bytes:
         return jsonify({"error": "Uploaded audio is empty."}), 400
+    if len(audio_bytes) > MAX_AUDIO_UPLOAD_BYTES:
+        return (
+            jsonify(
+                {"error": f"Η ηχογράφηση είναι πολύ μεγάλη (όριο {MAX_AUDIO_UPLOAD_MB} MB)."}
+            ),
+            413,
+        )
 
     try:
         return jsonify(transcribe(audio_bytes))
@@ -467,6 +575,15 @@ def transcribe_route():
 
 @app.route("/api/tts", methods=["POST"])
 def tts_route():
+    # Auth + rate limit: every call costs an Azure Speech synthesis.
+    try:
+        user_id, _email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    limited = _rate_limited(_TTS_LIMITER, f"tts:{user_id}")
+    if limited is not None:
+        return limited
+
     payload = request.get_json(silent=True) or {}
     try:
         audio = synthesize_speech(payload.get("text", ""))
@@ -480,6 +597,15 @@ def tts_route():
 
 @app.route("/api/roleplay/chat", methods=["POST"])
 def roleplay_chat_route():
+    # Auth + rate limit: every call costs a Claude request.
+    try:
+        user_id, _email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    limited = _rate_limited(_AI_CHAT_LIMITER, f"ai-chat:{user_id}")
+    if limited is not None:
+        return limited
+
     payload = request.get_json(silent=True) or {}
 
     try:
@@ -504,6 +630,15 @@ def email_feedback_route():
     Body: {"scenario": <Greek task>, "instructions": <Greek guidance>,
     "email_text": <the learner's email>}. Returns {good, improve, suggestion}.
     """
+    # Auth + rate limit: every call costs a Claude request.
+    try:
+        user_id, _email = verify_request(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    limited = _rate_limited(_AI_CHAT_LIMITER, f"ai-chat:{user_id}")
+    if limited is not None:
+        return limited
+
     payload = request.get_json(silent=True) or {}
 
     try:
@@ -685,6 +820,13 @@ def placement_submit():
     answers = payload.get("answers")
     if not isinstance(answers, list) or not answers:
         return jsonify({"error": "Body must include a non-empty 'answers' list."}), 400
+    if len(answers) > MAX_PLACEMENT_ANSWERS:
+        return (
+            jsonify(
+                {"error": f"Πάρα πολλές απαντήσεις (όριο {MAX_PLACEMENT_ANSWERS})."}
+            ),
+            400,
+        )
 
     session = SessionLocal()
     try:

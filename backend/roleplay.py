@@ -15,6 +15,13 @@ logger = logging.getLogger(__name__)
 # Use the latest, most capable Claude model.
 MODEL = "claude-opus-4-8"
 
+# Size caps: every token in the history/scenario is billed on each turn, so
+# oversized input is rejected (413) instead of being forwarded to the API.
+MAX_HISTORY_TURNS = 40
+MAX_MESSAGE_CHARS = 4000
+MAX_SCENARIO_CHARS = 4000
+MAX_ROLE_CHARS = 200
+
 # Structured-output schema: reply + correction are always strings. An empty
 # correction string means "no notable mistake" and is converted to null before
 # returning to the client.
@@ -72,6 +79,31 @@ def _clean_history(history):
 
 def chat(scenario, user_role, history, user_message):
     """Run one role-play turn and return {"reply": str, "correction": str|None}."""
+    user_message = (user_message or "").strip()
+    scenario = (scenario or "").strip()
+    user_role = (user_role or "").strip()
+
+    # Validate input FIRST (cheap, config-independent), then check configuration.
+    # Reject oversized input instead of billing it (see the caps above).
+    if isinstance(history, list) and len(history) > MAX_HISTORY_TURNS:
+        raise RoleplayError(
+            "Η συνομιλία έγινε πολύ μεγάλη — πάτα «Τέλος / Επανεκκίνηση» για νέο role-play.",
+            413,
+        )
+    if len(user_message) > MAX_MESSAGE_CHARS:
+        raise RoleplayError(
+            f"Το μήνυμα είναι πολύ μεγάλο (όριο {MAX_MESSAGE_CHARS} χαρακτήρες).", 413
+        )
+    if len(scenario) > MAX_SCENARIO_CHARS or len(user_role) > MAX_ROLE_CHARS:
+        raise RoleplayError("Το σενάριο είναι πολύ μεγάλο.", 413)
+
+    messages = _clean_history(history)
+    if any(len(m["content"]) > MAX_MESSAGE_CHARS for m in messages):
+        raise RoleplayError(
+            f"Ένα μήνυμα της συνομιλίας είναι πολύ μεγάλο (όριο {MAX_MESSAGE_CHARS} χαρακτήρες).",
+            413,
+        )
+
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         logger.error("ANTHROPIC_API_KEY is not set; role-play is unavailable.")
@@ -82,9 +114,6 @@ def chat(scenario, user_role, history, user_message):
     except ImportError as exc:  # pragma: no cover - dependency missing
         logger.exception("anthropic SDK failed to import.")
         raise RoleplayError("AI role-play is not available on the server.", 503) from exc
-
-    user_message = (user_message or "").strip()
-    messages = _clean_history(history)
 
     if user_message:
         messages.append({"role": "user", "content": user_message})

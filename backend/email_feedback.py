@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 # Use the latest, most capable Claude model (same as roleplay/generation).
 MODEL = "claude-opus-4-8"
 
+# Size caps: the learner's email and the (client-supplied) task text are billed
+# as prompt tokens, so oversized input is rejected (413) instead of forwarded.
+MAX_EMAIL_CHARS = 10_000
+MAX_TASK_CHARS = 4000
+
 # Structured output: three strings. "good" and "improve" are Greek feedback;
 # "suggestion" is the improved email itself, in English.
 RESPONSE_SCHEMA = {
@@ -66,6 +71,12 @@ def generate_feedback(scenario, instructions, email_text):
     email_text = (email_text or "").strip()
     if not email_text:
         raise EmailFeedbackError("Γράψε πρώτα το email σου.", 400)
+    if len(email_text) > MAX_EMAIL_CHARS:
+        raise EmailFeedbackError(
+            f"Το email είναι πολύ μεγάλο (όριο {MAX_EMAIL_CHARS} χαρακτήρες).", 413
+        )
+    if len((scenario or "")) > MAX_TASK_CHARS or len((instructions or "")) > MAX_TASK_CHARS:
+        raise EmailFeedbackError("Το σενάριο είναι πολύ μεγάλο.", 413)
 
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:

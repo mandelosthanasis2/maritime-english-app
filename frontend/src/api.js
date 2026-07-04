@@ -459,9 +459,11 @@ export function adminDeleteItem(itemId) {
 }
 
 export async function roleplayChat({ itemId, scenario, userRole, history, userMessage }) {
+  const headers = await authHeaders()
+  headers['Content-Type'] = 'application/json'
   const res = await fetch(`${API_BASE_URL}/api/roleplay/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       item_id: itemId,
       scenario,
@@ -484,9 +486,11 @@ export async function roleplayChat({ itemId, scenario, userRole, history, userMe
 }
 
 export async function emailFeedback({ scenario, instructions, emailText }) {
+  const headers = await authHeaders()
+  headers['Content-Type'] = 'application/json'
   const res = await fetch(`${API_BASE_URL}/api/email/feedback`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       scenario,
       instructions,
@@ -507,11 +511,14 @@ export async function emailFeedback({ scenario, instructions, emailText }) {
 }
 
 export async function transcribeAudio(audioBlob) {
+  // Auth header only — the browser sets the multipart boundary Content-Type.
+  const headers = await authHeaders()
   const form = new FormData()
   form.append('audio', audioBlob, 'speech.webm')
 
   const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
     method: 'POST',
+    headers,
     body: form,
   })
   if (!res.ok) {
@@ -528,12 +535,15 @@ export async function transcribeAudio(audioBlob) {
 }
 
 export async function assessPronunciation(audioBlob, referenceText) {
+  // Auth header only — the browser sets the multipart boundary Content-Type.
+  const headers = await authHeaders()
   const form = new FormData()
   form.append('audio', audioBlob, 'speech.webm')
   form.append('reference_text', referenceText)
 
   const res = await fetch(`${API_BASE_URL}/api/assess-pronunciation`, {
     method: 'POST',
+    headers,
     body: form,
   })
   if (!res.ok) {
@@ -558,11 +568,14 @@ export function ttsUrl(text) {
   if (!key) return Promise.reject(new Error('empty text'))
   if (ttsCache.has(key)) return ttsCache.get(key)
 
-  const promise = fetch(`${API_BASE_URL}/api/tts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: key }),
-  })
+  const promise = authHeaders()
+    .then((headers) =>
+      fetch(`${API_BASE_URL}/api/tts`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: key }),
+      }),
+    )
     .then(async (res) => {
       if (!res.ok) {
         let message = `Η εκφώνηση απέτυχε (${res.status})`
