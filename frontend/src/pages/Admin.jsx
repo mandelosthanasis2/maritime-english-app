@@ -1,5 +1,6 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import CostsTab from '../components/admin/CostsTab.jsx'
+import InterviewPrepTab from '../components/admin/InterviewPrepTab.jsx'
 import LevelsTab from '../components/admin/LevelsTab.jsx'
 import ReviewTab from '../components/admin/ReviewTab.jsx'
 import UsersTab from '../components/admin/UsersTab.jsx'
@@ -14,6 +15,7 @@ const TABS = [
   { key: 'levels', icon: '📚', label: 'Επίπεδα' },
   { key: 'users', icon: '👥', label: 'Χρήστες' },
   { key: 'costs', icon: '💰', label: 'Κόστη' },
+  { key: 'interview', icon: '🎤', label: 'Interview Prep' },
 ]
 
 export default function Admin() {
@@ -48,6 +50,7 @@ export default function Admin() {
       {tab === 'levels' && <LevelsTab onAuthFail={onAuthFail} />}
       {tab === 'users' && <UsersTab onAuthFail={onAuthFail} />}
       {tab === 'costs' && <CostsTab onAuthFail={onAuthFail} />}
+      {tab === 'interview' && <InterviewPrepTab onAuthFail={onAuthFail} />}
     </div>
   )
 }

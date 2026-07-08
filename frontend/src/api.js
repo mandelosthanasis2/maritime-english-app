@@ -392,6 +392,16 @@ export function adminCosts({ days = 14 } = {}) {
   return adminRequest(`/api/admin/costs?days=${days}`)
 }
 
+// Admin-only interview-prep chat. Stateless server: send the FULL conversation
+// ([{role, content}, ...], ending with the user's latest message) each turn.
+// Returns {reply}.
+export function adminInterviewPrepChat(messages) {
+  return adminRequest('/api/admin/interview-prep/chat', {
+    method: 'POST',
+    body: { messages },
+  })
+}
+
 export function adminAutoCategorize() {
   return adminRequest('/api/admin/auto-categorize', { method: 'POST' })
 }
