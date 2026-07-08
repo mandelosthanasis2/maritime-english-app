@@ -30,6 +30,7 @@ const ENDPOINT_LABEL = {
   generate_teaching: 'Teaching items',
   auto_categorize: 'Αυτο-κατηγοριοποίηση',
   email_scenarios: 'Email σενάρια',
+  admin_interview_prep: 'Interview Prep 🎤',
   generate: 'Παραγωγή κειμένου',
 }
 

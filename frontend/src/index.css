@@ -5243,3 +5243,219 @@ textarea {
 .ct-disclaimer {
   text-align: center;
 }
+
+/* ============================================================
+   Admin: Interview Prep tab (🎤 chat with the interview coach)
+   ============================================================ */
+.ip-panel {
+  gap: 0.7rem;
+}
+
+.ip-new {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+/* Mobile-first: the chat takes most of the viewport so a long coaching
+   session is comfortable to scroll on a phone. */
+.ip-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  height: min(58vh, 34rem);
+  overflow-y: auto;
+  padding: 0.3rem 0.2rem;
+  overscroll-behavior: contain;
+}
+
+.ip-empty {
+  margin: auto;
+  text-align: center;
+  max-width: 26rem;
+}
+
+.ip-row {
+  display: flex;
+  flex-direction: column;
+  max-width: 92%;
+  animation: bubble-in 0.22s ease;
+}
+
+.ip-row--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.ip-row--assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.ip-bubble {
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--r-lg);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  word-wrap: break-word;
+  box-shadow: var(--sh-sm);
+  white-space: pre-wrap;
+}
+
+.ip-bubble--assistant {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 5px;
+  white-space: normal;
+}
+
+.ip-bubble--user {
+  background: var(--grad-primary);
+  color: #fff;
+  border-bottom-right-radius: 5px;
+}
+
+/* Markdown inside assistant bubbles */
+.ip-bubble--assistant p {
+  margin: 0 0 0.55rem;
+}
+.ip-bubble--assistant p:last-child,
+.ip-bubble--assistant ul:last-child,
+.ip-bubble--assistant ol:last-child {
+  margin-bottom: 0;
+}
+.ip-bubble--assistant ul,
+.ip-bubble--assistant ol {
+  margin: 0 0 0.55rem;
+  padding-left: 1.2rem;
+}
+.ip-bubble--assistant li {
+  margin: 0.2rem 0;
+}
+.ip-bubble--assistant code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+}
+.ip-md__heading {
+  font-weight: 700;
+  color: var(--heading);
+}
+
+/* Typing indicator (same rhythm as the roleplay chat) */
+.ip-typing {
+  display: inline-flex;
+  gap: 0.28rem;
+  align-items: center;
+  padding: 0.7rem 0.9rem;
+}
+.ip-typing span {
+  width: 0.46rem;
+  height: 0.46rem;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  animation: rp-bounce 1.2s infinite ease-in-out;
+}
+.ip-typing span:nth-child(2) { animation-delay: 0.15s; }
+.ip-typing span:nth-child(3) { animation-delay: 0.3s; }
+
+.ip-error {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.ip-error .admin-error {
+  flex: 1;
+  min-width: 12rem;
+}
+
+/* Quick-start chips above the input */
+.ip-quick {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.ip-quick__btn {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--ink-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 0.4rem 0.75rem;
+  transition: transform 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.ip-quick__btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.ip-quick__btn:hover:not(:disabled) {
+  border-color: var(--turquoise);
+  color: var(--ink);
+}
+
+.ip-quick__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ip-inputrow {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-end;
+}
+
+.ip-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.4;
+  padding: 0.55rem 0.85rem;
+  border: 2px solid var(--border);
+  border-radius: var(--r-md);
+  outline: none;
+  resize: none;
+  background: var(--surface);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.ip-input:focus {
+  border-color: var(--turquoise);
+  box-shadow: 0 0 0 3px rgba(22, 184, 200, 0.16);
+}
+
+.ip-send {
+  font: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+  border: none;
+  border-radius: var(--r-pill);
+  width: 2.7rem;
+  height: 2.7rem;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--grad-primary);
+  color: #fff;
+  box-shadow: var(--sh-teal);
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+.ip-send:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.ip-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

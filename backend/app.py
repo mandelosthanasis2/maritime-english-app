@@ -33,6 +33,7 @@ from adaptive import choose_next, choose_next_lesson
 from auth import ADMIN_API_KEY_HEADER, AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
 from email_feedback import EmailFeedbackError, generate_feedback as email_feedback
+from interview_prep import InterviewPrepError, chat as interview_prep_chat
 from lang import DEFAULT_LANG, normalize_item_data, resolve_item_data, resolve_lang
 from rate_limit import RateLimiter
 from models import (
@@ -3128,6 +3129,35 @@ def admin_costs():
         )
     finally:
         session.close()
+
+
+@app.route("/api/admin/interview-prep/chat", methods=["POST"])
+def admin_interview_prep_chat():
+    """Admin-only interview-prep chat (see interview_prep.py).
+
+    Body: {"messages": [{"role": "user"|"assistant", "content": "..."}, ...]}
+    — the full conversation history each turn (stateless server, same pattern
+    as roleplay). Returns {"reply": "..."}. The prep document never leaves the
+    server except inside the system prompt to Claude.
+    """
+    try:
+        user_id, _email = verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    # Every call costs a Claude request — same bucket as the other AI chats.
+    limited = _rate_limited(_AI_CHAT_LIMITER, f"ai-chat:{_admin_rate_key(request)}")
+    if limited is not None:
+        return limited
+
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        return jsonify(interview_prep_chat(payload.get("messages"), user_id=user_id))
+    except InterviewPrepError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    except Exception:  # pragma: no cover - unexpected failure
+        logger.exception("Interview prep chat failed unexpectedly")
+        return jsonify({"error": "Internal error during interview prep chat."}), 500
 
 
 @app.route("/api/admin/skill-mismatches", methods=["GET"])
