@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 
 from usage import log_usage, wav_seconds
 
@@ -211,3 +212,195 @@ def assess_pronunciation(audio_bytes, reference_text, language="en-US", user_id=
         raise PronunciationError("Unexpected assessment result.", 502)
     finally:
         _safe_remove(wav_path)
+
+
+def assess_pronunciation_unscripted(
+    audio_bytes,
+    language="en-US",
+    user_id=None,
+    usage_endpoint="pronunciation_unscripted",
+    max_seconds=None,
+):
+    """Azure pronunciation assessment in UNSCRIPTED mode (no reference text).
+
+    Unlike the scripted lesson flow above, Azure both transcribes the speech
+    AND scores it, so this works for free-form answers (e.g. the interview
+    prep chat). Runs CONTINUOUS recognition — free answers run 60-90 seconds,
+    far past what recognize_once() captures — and merges the per-utterance
+    results into one summary.
+
+    `max_seconds` rejects over-long audio with 413 AFTER the (local, free)
+    ffmpeg conversion but BEFORE anything is sent to Azure, so an oversized
+    recording never becomes a paid call.
+
+    Returns a JSON-serializable dict:
+      {transcript, accuracy_score, fluency_score, prosody_score|None,
+       pronunciation_score, words: [{word, accuracy_score, error_type,
+       phonemes: [{phoneme, accuracy_score}]}]}
+    """
+    key = os.environ.get("AZURE_SPEECH_KEY")
+    region = os.environ.get("AZURE_SPEECH_REGION")
+    if not key or not region:
+        logger.error(
+            "Azure Speech is not configured: AZURE_SPEECH_KEY set=%s, "
+            "AZURE_SPEECH_REGION set=%s.",
+            bool(key),
+            bool(region),
+        )
+        raise PronunciationError(
+            "Speech assessment is not configured on the server.", 503
+        )
+
+    try:
+        import azure.cognitiveservices.speech as speechsdk
+    except ImportError as exc:  # pragma: no cover - dependency missing
+        logger.exception("azure-cognitiveservices-speech failed to import.")
+        raise PronunciationError(
+            "Speech assessment is not available on the server.", 503
+        ) from exc
+
+    wav_path = convert_to_wav_file(audio_bytes)
+    audio_seconds = wav_seconds(wav_path)
+
+    if max_seconds is not None and audio_seconds > max_seconds:
+        _safe_remove(wav_path)
+        raise PronunciationError(
+            f"Η ηχογράφηση είναι πολύ μεγάλη (όριο {int(max_seconds // 60)} λεπτά). "
+            "Δώσε μια πιο σύντομη απάντηση.",
+            413,
+        )
+
+    try:
+        speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
+        audio_config = speechsdk.audio.AudioConfig(filename=wav_path)
+
+        # Empty reference text = unscripted mode: Azure scores whatever was
+        # actually said. Miscue detection is meaningless without a script.
+        pa_config = speechsdk.PronunciationAssessmentConfig(
+            reference_text="",
+            grading_system=speechsdk.PronunciationAssessmentGradingSystem.HundredMark,
+            granularity=speechsdk.PronunciationAssessmentGranularity.Phoneme,
+            enable_miscue=False,
+        )
+        # Prosody + readable phoneme names are newer SDK features — best effort.
+        if hasattr(pa_config, "enable_prosody_assessment"):
+            pa_config.enable_prosody_assessment()
+        try:
+            pa_config.phoneme_alphabet = "IPA"
+        except Exception:  # pragma: no cover - older SDK
+            pass
+
+        recognizer = speechsdk.SpeechRecognizer(
+            speech_config=speech_config,
+            language=language,
+            audio_config=audio_config,
+        )
+        pa_config.apply_to(recognizer)
+
+        segments = []
+        cancel_error = []
+        done = threading.Event()
+
+        def on_recognized(evt):
+            if (
+                evt.result.reason == speechsdk.ResultReason.RecognizedSpeech
+                and evt.result.text
+            ):
+                segments.append(evt.result)
+
+        def on_canceled(evt):
+            details = getattr(evt, "cancellation_details", None) or evt
+            reason = getattr(details, "reason", None)
+            # EndOfStream is the normal end of a file input, not an error.
+            if reason == speechsdk.CancellationReason.Error:
+                cancel_error.append(getattr(details, "error_details", str(reason)))
+            done.set()
+
+        recognizer.recognized.connect(on_recognized)
+        recognizer.canceled.connect(on_canceled)
+        recognizer.session_stopped.connect(lambda evt: done.set())
+
+        recognizer.start_continuous_recognition()
+        # Files are processed faster than real time; the margin covers service
+        # latency. A hung session must not hold the request forever.
+        finished = done.wait(timeout=max(60.0, audio_seconds + 60.0))
+        recognizer.stop_continuous_recognition()
+
+        if cancel_error:
+            logger.warning("Azure unscripted assessment canceled: %s", cancel_error[0])
+            raise PronunciationError("Speech assessment failed. Please try again.", 502)
+        if not finished and not segments:
+            logger.error("Azure unscripted assessment timed out with no results.")
+            raise PronunciationError("Speech assessment timed out. Please try again.", 502)
+
+        # The audio was processed (and billed) even if it held no speech.
+        log_usage(
+            provider="azure_pronunciation",
+            endpoint=usage_endpoint,
+            units=audio_seconds,
+            user_id=user_id,
+        )
+
+        if not segments:
+            raise PronunciationError(
+                "No speech was recognized. Please speak clearly and try again.", 422
+            )
+
+        return _merge_unscripted_segments(speechsdk, segments)
+    finally:
+        _safe_remove(wav_path)
+
+
+def _merge_unscripted_segments(speechsdk, segments):
+    """Merge continuous-recognition utterances into one assessment summary.
+
+    Overall scores are weighted by each utterance's word count so a short
+    "yes" can't drag down (or prop up) a long answer; prosody is averaged
+    over the utterances that report it (None when none do).
+    """
+    transcript_parts = []
+    words = []
+    weighted = {"accuracy": 0.0, "fluency": 0.0, "pronunciation": 0.0}
+    prosody_total = 0.0
+    prosody_weight = 0
+    total_weight = 0
+
+    for result in segments:
+        pa = speechsdk.PronunciationAssessmentResult(result)
+        transcript_parts.append(result.text)
+        seg_words = pa.words or []
+        weight = max(1, len(seg_words))
+        total_weight += weight
+        weighted["accuracy"] += (pa.accuracy_score or 0) * weight
+        weighted["fluency"] += (pa.fluency_score or 0) * weight
+        weighted["pronunciation"] += (pa.pronunciation_score or 0) * weight
+        prosody = getattr(pa, "prosody_score", None)
+        if prosody is not None:
+            prosody_total += prosody * weight
+            prosody_weight += weight
+
+        for w in seg_words:
+            phonemes = [
+                {"phoneme": p.phoneme, "accuracy_score": p.accuracy_score}
+                for p in (getattr(w, "phonemes", None) or [])
+                if getattr(p, "phoneme", None)
+            ]
+            words.append(
+                {
+                    "word": w.word,
+                    "accuracy_score": w.accuracy_score,
+                    "error_type": w.error_type,
+                    "phonemes": phonemes,
+                }
+            )
+
+    return {
+        "transcript": " ".join(t.strip() for t in transcript_parts if t.strip()),
+        "accuracy_score": round(weighted["accuracy"] / total_weight, 1),
+        "fluency_score": round(weighted["fluency"] / total_weight, 1),
+        "pronunciation_score": round(weighted["pronunciation"] / total_weight, 1),
+        "prosody_score": (
+            round(prosody_total / prosody_weight, 1) if prosody_weight else None
+        ),
+        "words": words,
+    }

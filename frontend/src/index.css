@@ -5459,3 +5459,162 @@ textarea {
   opacity: 0.5;
   cursor: default;
 }
+
+/* --- Interview Prep: voice layer ---------------------------------------- */
+
+.ip-mic {
+  font: inherit;
+  font-size: 1.15rem;
+  cursor: pointer;
+  border: none;
+  border-radius: var(--r-pill);
+  width: 2.7rem;
+  height: 2.7rem;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--ink);
+  border: 2px solid var(--border);
+  transition: transform 0.12s ease, opacity 0.12s ease, background 0.12s ease;
+}
+
+.ip-mic:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.ip-mic:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ip-mic--active {
+  background: var(--wrong-bg);
+  border-color: var(--wrong);
+  color: var(--wrong);
+  animation: ip-rec-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes ip-rec-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 60, 60, 0.35); }
+  50% { box-shadow: 0 0 0 7px rgba(220, 60, 60, 0); }
+}
+
+.ip-bubble--voice {
+  white-space: pre-wrap;
+}
+
+.ip-voice-icon {
+  opacity: 0.85;
+}
+
+.ip-analysing {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
+
+/* 🔊 replay of the interviewer's question on a coach message */
+.ip-speak {
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  padding: 0.15rem 0.5rem;
+  margin-top: 0.3rem;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.ip-speak:active {
+  transform: scale(0.95);
+}
+
+.ip-speak--playing {
+  border-color: var(--turquoise);
+}
+
+/* Compact pronunciation bar under a voice answer */
+.ip-pron {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  max-width: 100%;
+}
+
+.ip-pron__scores {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ip-score {
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: var(--r-pill);
+  padding: 0.18rem 0.55rem;
+  white-space: nowrap;
+}
+
+.ip-score--good {
+  background: var(--correct-bg);
+  color: var(--correct);
+}
+
+.ip-score--mid {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
+.ip-score--bad {
+  background: var(--wrong-bg);
+  color: var(--wrong);
+}
+
+.ip-pron__words {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ip-word {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--wrong-bg);
+  color: var(--wrong);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 0.15rem 0.45rem;
+  text-decoration: underline wavy var(--wrong) 1px;
+  text-underline-offset: 3px;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.ip-word:active {
+  transform: scale(0.95);
+}
+
+.ip-word:hover {
+  border-color: var(--wrong);
+}
+
+/* Word-chip tap → the word lights up inside the coach's explanation */
+.ip-hl {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border-radius: 3px;
+  padding: 0 0.15rem;
+  animation: ip-hl-flash 1.6s ease;
+}
+
+@keyframes ip-hl-flash {
+  0%, 40% { outline: 2px solid var(--amber); }
+  100% { outline: 2px solid transparent; }
+}
