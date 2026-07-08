@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import random
@@ -33,7 +34,11 @@ from adaptive import choose_next, choose_next_lesson
 from auth import ADMIN_API_KEY_HEADER, AuthError, verify_admin, verify_request
 from db import SessionLocal, init_db
 from email_feedback import EmailFeedbackError, generate_feedback as email_feedback
-from interview_prep import InterviewPrepError, chat as interview_prep_chat
+from interview_prep import (
+    InterviewPrepError,
+    chat as interview_prep_chat,
+    voice_turn as interview_prep_voice_turn,
+)
 from lang import DEFAULT_LANG, normalize_item_data, resolve_item_data, resolve_lang
 from rate_limit import RateLimiter
 from models import (
@@ -3158,6 +3163,53 @@ def admin_interview_prep_chat():
     except Exception:  # pragma: no cover - unexpected failure
         logger.exception("Interview prep chat failed unexpectedly")
         return jsonify({"error": "Internal error during interview prep chat."}), 500
+
+
+@app.route("/api/admin/interview-prep/voice-turn", methods=["POST"])
+def admin_interview_prep_voice_turn():
+    """Admin-only SPOKEN interview-prep turn (see interview_prep.voice_turn).
+
+    Multipart form: `audio` (the recorded answer) + `messages` (JSON — the
+    conversation so far, WITHOUT the new answer). Azure transcribes + scores
+    the audio in unscripted mode, then Claude replies with pronunciation /
+    language / content feedback and the next interviewer turn. Returns
+    {"transcript", "pronunciation", "reply"}.
+    """
+    try:
+        user_id, _email = verify_admin(request)
+    except AuthError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    # Costs an Azure assessment AND a Claude request — same AI-chat bucket.
+    limited = _rate_limited(_AI_CHAT_LIMITER, f"ai-chat:{_admin_rate_key(request)}")
+    if limited is not None:
+        return limited
+
+    audio_file = request.files.get("audio")
+    if audio_file is None:
+        return jsonify({"error": "Missing 'audio' file."}), 400
+    audio_bytes = audio_file.read()
+    if not audio_bytes:
+        return jsonify({"error": "Uploaded audio is empty."}), 400
+    if len(audio_bytes) > MAX_AUDIO_UPLOAD_BYTES:
+        return (
+            jsonify(
+                {"error": f"Η ηχογράφηση είναι πολύ μεγάλη (όριο {MAX_AUDIO_UPLOAD_MB} MB)."}
+            ),
+            413,
+        )
+
+    try:
+        messages = json.loads(request.form.get("messages") or "[]")
+    except ValueError:
+        return jsonify({"error": "'messages' must be valid JSON."}), 400
+
+    try:
+        return jsonify(interview_prep_voice_turn(messages, audio_bytes, user_id=user_id))
+    except (InterviewPrepError, PronunciationError) as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    except Exception:  # pragma: no cover - unexpected failure
+        logger.exception("Interview prep voice turn failed unexpectedly")
+        return jsonify({"error": "Internal error during the voice turn."}), 500
 
 
 @app.route("/api/admin/skill-mismatches", methods=["GET"])

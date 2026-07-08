@@ -31,6 +31,8 @@ const ENDPOINT_LABEL = {
   auto_categorize: 'Αυτο-κατηγοριοποίηση',
   email_scenarios: 'Email σενάρια',
   admin_interview_prep: 'Interview Prep 🎤',
+  admin_interview_prep_voice: 'Interview Prep 🎤 (φωνή)',
+  admin_interview_prep_azure: 'Interview Prep 🎤 (προφορά)',
   generate: 'Παραγωγή κειμένου',
 }
 

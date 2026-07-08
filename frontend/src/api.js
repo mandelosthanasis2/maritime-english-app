@@ -402,6 +402,34 @@ export function adminInterviewPrepChat(messages) {
   })
 }
 
+// Spoken interview-prep turn: multipart audio + the conversation so far
+// (WITHOUT the new answer — the server appends the transcript). Returns
+// {transcript, pronunciation, reply}.
+export async function adminInterviewPrepVoiceTurn({ audioBlob, messages }) {
+  // Auth header only — the browser sets the multipart boundary Content-Type.
+  const headers = await authHeaders()
+  const form = new FormData()
+  form.append('audio', audioBlob, 'answer.webm')
+  form.append('messages', JSON.stringify(messages))
+
+  let res
+  try {
+    res = await fetch(`${API_BASE_URL}/api/admin/interview-prep/voice-turn`, {
+      method: 'POST',
+      headers,
+      body: form,
+    })
+  } catch {
+    throw adminNetworkError()
+  }
+  if (!res.ok) {
+    const err = await adminResponseError(res)
+    err.status = res.status
+    throw err
+  }
+  return res.json()
+}
+
 export function adminAutoCategorize() {
   return adminRequest('/api/admin/auto-categorize', { method: 'POST' })
 }
